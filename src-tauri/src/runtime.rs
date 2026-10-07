@@ -27,8 +27,11 @@ pub struct RuntimeManifest {
 #[derive(Debug, Clone, Serialize)]
 pub struct Runtime {
     pub python: PathBuf,
+    /// The unpacked interpreter's root (what `python` lives inside).
+    pub python_dir: PathBuf,
     pub upstream: PathBuf,
     pub probe_script: PathBuf,
+    pub plan_script: PathBuf,
     pub upstream_sha: String,
 }
 
@@ -82,6 +85,29 @@ fn unpack_verified(archive: &Path, expected_sha: &str, dest: &Path) -> Result<()
     Ok(())
 }
 
+/// Our own read-only scripts are not upstream's: keep them beside, never inside, the upstream tree.
+fn install_sidecar(rdir: &Path, root: &Path, name: &str) -> Result<PathBuf, String> {
+    let dest = root.join(name);
+    let fresh = fs::read(rdir.join(name)).map_err(|e| format!("bundled {name} missing: {e}"))?;
+    if fs::read(&dest).ok().as_deref() != Some(&fresh[..]) {
+        fs::write(&dest, &fresh).map_err(|e| e.to_string())?;
+    }
+    Ok(dest)
+}
+
+/// Bytes on disk under `path`, following no symlinks. Unreadable entries count as zero.
+fn dir_bytes(path: &Path) -> u64 {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return 0;
+    };
+    if !meta.is_dir() {
+        return meta.len();
+    }
+    fs::read_dir(path)
+        .map(|entries| entries.flatten().map(|e| dir_bytes(&e.path())).sum())
+        .unwrap_or(0)
+}
+
 pub fn ensure_unpacked(resource_dir: &Path) -> Result<Runtime, String> {
     let rdir = resource_dir.join("runtime");
     let manifest_path = rdir.join("manifest.json");
@@ -108,13 +134,8 @@ pub fn ensure_unpacked(resource_dir: &Path) -> Result<Runtime, String> {
         &up_dir,
     )?;
 
-    // The probe is ours, not upstream's: keep it beside, never inside, the upstream tree.
-    let probe_script = root.join("gui_probe.py");
-    let bundled_probe = rdir.join("gui_probe.py");
-    let fresh = fs::read(&bundled_probe).map_err(|e| format!("bundled probe missing: {e}"))?;
-    if fs::read(&probe_script).ok().as_deref() != Some(&fresh[..]) {
-        fs::write(&probe_script, &fresh).map_err(|e| e.to_string())?;
-    }
+    let probe_script = install_sidecar(&rdir, &root, "gui_probe.py")?;
+    let plan_script = install_sidecar(&rdir, &root, "gui_plan.py")?;
 
     let python = paths::python_exe(&py_dir);
     if !python.exists() {
@@ -122,8 +143,10 @@ pub fn ensure_unpacked(resource_dir: &Path) -> Result<Runtime, String> {
     }
     Ok(Runtime {
         python,
+        python_dir: py_dir,
         upstream: up_dir,
         probe_script,
+        plan_script,
         upstream_sha: manifest.upstream_sha,
     })
 }
@@ -155,6 +178,31 @@ impl Runtime {
             ));
         }
         serde_json::from_slice(&out.stdout).map_err(|e| format!("probe output: {e}"))
+    }
+
+    /// What Set up would install and how big each part is (sidecar/gui_plan.py). Reads only; asks
+    /// Hugging Face and GitHub for sizes, so it can take a few seconds.
+    pub fn plan(&self, model_hf: Option<&str>) -> Result<serde_json::Value, String> {
+        let mut cmd = self.python_cmd();
+        cmd.arg(&self.plan_script);
+        if let Some(m) = model_hf {
+            cmd.arg(format!("--model-hf={m}"));
+        }
+        let out = cmd
+            .output()
+            .map_err(|e| format!("plan failed to start: {e}"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "plan failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            ));
+        }
+        serde_json::from_slice(&out.stdout).map_err(|e| format!("plan output: {e}"))
+    }
+
+    /// The client as installed: the bundled interpreter plus upstream's source, as unpacked.
+    pub fn client_bytes(&self) -> u64 {
+        dir_bytes(&self.python_dir) + dir_bytes(&self.upstream)
     }
 
     /// Run an upstream module to completion, calling `on_line` for each output line (stdout and

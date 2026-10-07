@@ -1,8 +1,19 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Icon from './lib/Icon.svelte';
+	import SetupSettings from './lib/SetupSettings.svelte';
 	import { api, onRuntimeReady, onTaskDone, onTaskLog, type PairingPreview } from './lib/api';
-	import { progressCaption, screenFor, statusRows, type AppState, type Status } from './lib/state';
+	import {
+		formatBytes,
+		planItems,
+		planTotal,
+		progressCaption,
+		screenFor,
+		statusRows,
+		type AppState,
+		type InstallPlan,
+		type Status
+	} from './lib/state';
 
 	let app = $state<AppState | null>(null);
 	let status = $state<Status | null>(null);
@@ -14,9 +25,44 @@
 	let showPaste = $state(false);
 	let logEl: HTMLPreElement | undefined = $state();
 
+	// Set up's plan: what it will install and how big. `modelHf` is the Customize override ('' =
+	// upstream's default); `planFor` is the override the current plan was sized for.
+	let modelHf = $state('');
+	let customizing = $state(false);
+	let plan = $state<InstallPlan | null>(null);
+	let planFor = $state<string | null>(null);
+	let planError = $state<string | null>(null);
+	let planSeq = 0;
+
 	const screen = $derived(screenFor(app));
 	const busy = $derived(app && app.ready ? app.busy : null);
 	const rows = $derived(app && app.ready ? statusRows(app, status) : []);
+	const planPending = $derived(planFor !== modelHf);
+	const items = $derived(plan ? planItems(plan, planPending ? modelHf : null) : []);
+	const total = $derived(planTotal(items));
+
+	async function loadPlan() {
+		const seq = ++planSeq;
+		const want = modelHf;
+		planError = null;
+		try {
+			const p = await api.installPlan(want);
+			if (seq !== planSeq) return; // a newer choice superseded this one
+			plan = p;
+			planFor = want;
+		} catch (e) {
+			if (seq !== planSeq) return;
+			planError = String(e);
+			planFor = want;
+		}
+	}
+
+	function saveSettings(next: string) {
+		customizing = false;
+		if (next === modelHf) return;
+		modelHf = next;
+		loadPlan();
+	}
 
 	async function refresh() {
 		try {
@@ -25,6 +71,7 @@
 			app = { ready: false, error: String(e) };
 		}
 		status = app.ready && app.service_healthy ? await api.status() : null;
+		if (screen === 'setup' && app.ready && plan === null && planFor === null && planSeq === 0) loadPlan();
 		if (screen === 'pair') clip = await api.clipboardPairing().catch(() => null);
 	}
 
@@ -87,24 +134,70 @@
 			<div class="error"><Icon name="error-warning-line" /><span class="mono">{app.error}</span></div>
 			<p class="small">Reinstalling the app usually fixes this.</p>
 		</div>
+	{:else if screen === 'setup' && app?.ready && customizing && busy !== 'setup'}
+		<SetupSettings
+			{modelHf}
+			defaultModel={plan?.model.default_id ?? ''}
+			onsave={saveSettings}
+			oncancel={() => (customizing = false)}
+		/>
 	{:else if screen === 'setup' && app?.ready}
 		<div class="stack">
 			<p class="label">Step 1 of 2</p>
 			<h1>Set up this computer</h1>
 			<p>
-				Installs the inference server (llama.cpp) for this computer’s hardware and downloads a small
-				starter model. Nothing is shared until you pair it with your AI Potluck account.
+				Installs these for this computer’s hardware. Nothing is shared until you pair it with your AI
+				Potluck account.
 			</p>
 		</div>
+		<div class="card" aria-label="What will be installed">
+			{#if plan}
+				<ul class="plan">
+					{#each items as item (item.name)}
+						<li class="plan-item">
+							<span class="plan-name">{item.name}</span>
+							<span class="plan-size mono">
+								{#if item.pending}Checking…{:else if item.bytes !== null}~{formatBytes(item.bytes)}{:else}—{/if}
+							</span>
+							<span class="plan-detail small">{item.detail}</span>
+							{#if item.note && !item.pending}
+								<span class="plan-note small" class:warn={item.warn}>
+									{#if item.warn}<Icon name="error-warning-line" size={14} />{/if}{item.note}
+								</span>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+				<div class="plan-item plan-total">
+					<span class="plan-name">Total</span>
+					<span class="plan-size mono">
+						{planPending ? 'Checking…' : `~${formatBytes(total.bytes)}${total.partial ? ' +' : ''}`}
+					</span>
+				</div>
+			{:else if planError}
+				<div class="error"><Icon name="error-warning-line" /><span>Couldn’t work out what will be installed: {planError}</span></div>
+			{:else}
+				<div class="progress" aria-label="Checking what will be installed"></div>
+				<p class="small">Checking what this computer needs…</p>
+			{/if}
+		</div>
+		{#if planError && plan}
+			<div class="error" role="alert"><Icon name="error-warning-line" /><span>{planError}</span></div>
+		{/if}
 		{#if busy === 'setup'}
 			<div class="stack">
 				<div class="progress" aria-label="Setting up"></div>
 				<p class="small">{caption ?? 'Starting…'}</p>
 			</div>
 		{:else}
-			<button class="btn primary block" onclick={() => run(api.setupDevice)}>
-				<Icon name="download-2-line" /> Set up
-			</button>
+			<div class="setup-actions">
+				<button class="btn primary" onclick={() => run(() => api.setupDevice(modelHf))}>
+					<Icon name="download-2-line" /> Set up
+				</button>
+				<button class="btn secondary" disabled={!plan} onclick={() => (customizing = true)}>
+					<Icon name="settings-3-line" /> Customize
+				</button>
+			</div>
 		{/if}
 		{#if !app.probe.service_manager_usable}
 			<p class="small">

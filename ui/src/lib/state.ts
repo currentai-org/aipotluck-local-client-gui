@@ -99,3 +99,131 @@ export function progressCaption(line: string): string | null {
 	if (!msg || /^[=-]{10,}$/.test(msg)) return null;
 	return msg.length > 140 ? msg.slice(0, 137) + '…' : msg;
 }
+
+/** What Set up would install (src-tauri `install_plan`, sidecar/gui_plan.py). Sizes are bytes or null (unknown). */
+export type InstallPlan = {
+	host: { os: string; arch: string; backend: string };
+	client: { bytes: number; upstream_sha: string };
+	llama_cpp: {
+		tag: string | null;
+		asset_key: string | null;
+		file: string | null;
+		bytes: number | null;
+		source_build: boolean;
+		reason?: string;
+		error?: string;
+	};
+	newt: { tag: string | null; file: string | null; bytes: number | null; error?: string };
+	model: { id: string; is_default: boolean; default_id: string; bytes: number | null; files: string[] };
+};
+
+/** Decimal units, like Hugging Face and GitHub show them, rounded the way a person would say it. */
+export function formatBytes(bytes: number): string {
+	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+	let v = bytes;
+	let i = 0;
+	while (v >= 1000 && i < units.length - 1) {
+		v /= 1000;
+		i++;
+	}
+	const shown = v >= 10 || i === 0 ? Math.round(v).toString() : v.toFixed(1).replace(/\.0$/, '');
+	return `${shown} ${units[i]}`;
+}
+
+export type PlanItem = {
+	name: string;
+	detail: string;
+	/** null: couldn't be measured; `pending`: being measured right now. */
+	bytes: number | null;
+	pending?: boolean;
+	note?: string;
+	warn?: boolean;
+};
+
+const BACKEND_NAMES: Record<string, string> = { cpu: 'CPU', cuda: 'CUDA', vulkan: 'Vulkan', rocm: 'ROCm' };
+
+/**
+ * One line per thing Set up puts on this computer, in the order it happens. `pendingModel` is the
+ * model just chosen in Customize while it is being sized ('' = back to the default): its row names
+ * that model and reads "Checking…", never the previous model's name or size.
+ */
+export function planItems(plan: InstallPlan, pendingModel: string | null = null): PlanItem[] {
+	const modelPending = pendingModel !== null;
+	const llama = plan.llama_cpp;
+	const backend = llama.asset_key ? llama.asset_key.split('-').slice(-1)[0] : plan.host.backend;
+	const llamaItem: PlanItem = {
+		name: 'llama.cpp',
+		detail: `Inference server · ${llama.tag ?? '?'} · ${BACKEND_NAMES[backend] ?? backend} build`,
+		bytes: llama.bytes,
+		note: 'download; larger once unpacked'
+	};
+	if (llama.source_build) {
+		llamaItem.bytes = null;
+		llamaItem.note = 'built from source on this computer';
+	} else if (llama.error) {
+		llamaItem.note = llama.error;
+		llamaItem.warn = true;
+	}
+	const newtItem: PlanItem = {
+		name: 'newt',
+		detail: `Tunnel to AI Potluck · ${plan.newt.tag ?? '?'}`,
+		bytes: plan.newt.bytes,
+		note: 'downloaded when you pair'
+	};
+	if (plan.newt.error) {
+		newtItem.note = plan.newt.error;
+		newtItem.warn = true;
+	}
+	const modelId = modelPending ? pendingModel || plan.model.default_id : plan.model.id;
+	const modelItem: PlanItem = {
+		name: modelId === plan.model.default_id ? 'Model (starter)' : 'Model',
+		detail: modelId,
+		bytes: modelPending ? null : plan.model.bytes,
+		pending: modelPending
+	};
+	if (!modelPending && plan.model.bytes === null) {
+		modelItem.note = 'couldn’t read its size from Hugging Face; check the name, or Set up may fail';
+		modelItem.warn = true;
+	}
+	return [
+		{
+			name: 'Client',
+			detail: `aipotluck-local-client ${plan.client.upstream_sha.slice(0, 7)} and its Python runtime`,
+			bytes: plan.client.bytes
+		},
+		llamaItem,
+		newtItem,
+		modelItem
+	];
+}
+
+/** Sum of what could be measured, and whether anything couldn't. */
+export function planTotal(items: PlanItem[]): { bytes: number; partial: boolean } {
+	return {
+		bytes: items.reduce((n, i) => n + (i.bytes ?? 0), 0),
+		partial: items.some((i) => i.bytes === null)
+	};
+}
+
+const HF_URL = /^https?:\/\/(?:www\.)?huggingface\.co\//i;
+
+/**
+ * What a person typed or pasted into the model field, as `owner/repo[:quant]`: trimmed, and a
+ * pasted huggingface.co page URL reduced to its repo. Empty means "use the default".
+ */
+export function normaliseModelId(raw: string): string {
+	let s = raw.trim();
+	if (HF_URL.test(s)) s = s.replace(HF_URL, '').split(/[?#]/)[0].split('/').slice(0, 2).join('/');
+	return s;
+}
+
+const PART = '[A-Za-z0-9](?:[A-Za-z0-9._-]{0,95})';
+const MODEL_ID = new RegExp(`^${PART}/${PART}(?::[A-Za-z0-9._-]{1,64})?$`);
+
+/**
+ * Same shape src-tauri/src/model_id.rs enforces (which is the real boundary; this is only so the
+ * settings page can say so before it closes).
+ */
+export function isModelId(id: string): boolean {
+	return MODEL_ID.test(id) && !/--|\.\./.test(id.split(':')[0]);
+}
