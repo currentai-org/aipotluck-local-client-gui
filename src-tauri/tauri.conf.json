@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "aipotluck-local-client-gui",
+  "mainBinaryName": "aipotluck-local-client-gui",
+  "version": "0.1.0",
+  "identifier": "org.aipotluck.localclient",
+  "build": {
+    "beforeDevCommand": "pnpm --dir ui dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm --dir ui build",
+    "frontendDist": "../ui/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "AI Potluck",
+        "width": 560,
+        "height": 720,
+        "minWidth": 440,
+        "minHeight": 560
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "deb",
+      "appimage"
+    ],
+    "category": "Utility",
+    "shortDescription": "Share this computer's AI with AI Potluck",
+    "longDescription": "Sets up a local inference server (llama.cpp) on this computer and pairs it with aipotluck.org, using the aipotluck-local-client CLI under the hood.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png"
+    ],
+    "resources": {
+      "resources/runtime/": "runtime/"
+    }
+  }
+}

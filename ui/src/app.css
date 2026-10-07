@@ -1,0 +1,318 @@
+/*
+ * App styles. Every value is a --ds-* token from tokens.css (synced verbatim from aipotluck.org's
+ * Alpha design system) -- no literal colours, sizes or radii here. Recipes mirror
+ * alpha-ds/components/button/button.recipe.ts and the rules in chat/design-system.md:
+ *  - sharp corners by default; accent at icon/badge scale only, never a surface fill
+ *  - bordered controls rest one surface tier up from what's behind them, never transparent
+ *  - destructive looks exactly like secondary; only its icon takes Accent 2
+ *  - labels left-aligned; DM Mono uppercase for CTAs/labels, Plus Jakarta Sans for copy
+ */
+
+html,
+body {
+	margin: 0;
+	height: 100%;
+}
+body {
+	background: var(--ds-surface);
+}
+#app {
+	min-height: 100%;
+	display: flex;
+	flex-direction: column;
+}
+
+/* Top bar: pure black chrome, the one place that's true (spec §4). */
+.topbar {
+	display: flex;
+	align-items: center;
+	gap: var(--ds-space-2);
+	padding: var(--ds-space-3) var(--ds-space-5);
+	background: var(--ds-bg-chrome);
+	color: var(--ds-fg-on-chrome);
+	border-bottom: var(--ds-border-hairline) solid var(--ds-line-1);
+}
+.topbar .mark {
+	color: var(--ds-accent-1);
+	display: inline-flex;
+}
+.topbar .name {
+	font-family: var(--ds-font-mono);
+	font-size: var(--ds-text-small);
+	font-weight: var(--ds-weight-medium);
+	letter-spacing: var(--ds-tracking-label);
+	text-transform: uppercase;
+}
+
+main {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: var(--ds-space-6);
+	padding: var(--ds-space-8) var(--ds-space-6);
+	max-width: 560px;
+	width: 100%;
+	box-sizing: border-box;
+	margin: 0 auto;
+}
+
+.label {
+	font-family: var(--ds-font-mono);
+	font-size: var(--ds-text-micro);
+	line-height: var(--ds-leading-micro);
+	font-weight: var(--ds-weight-medium);
+	letter-spacing: var(--ds-tracking-label);
+	text-transform: uppercase;
+	color: var(--ds-fg-3);
+	margin: 0;
+}
+h1 {
+	font-family: var(--ds-font-mono);
+	font-size: var(--ds-text-heading);
+	line-height: var(--ds-leading-heading);
+	font-weight: var(--ds-weight-medium);
+	letter-spacing: var(--ds-tracking-tight);
+	color: var(--ds-fg-1);
+	margin: 0;
+}
+p {
+	margin: 0;
+	color: var(--ds-fg-2);
+}
+.small {
+	font-size: var(--ds-text-small);
+	line-height: var(--ds-leading-small);
+}
+.mono {
+	font-family: var(--ds-font-mono);
+}
+.stack {
+	display: flex;
+	flex-direction: column;
+	gap: var(--ds-space-3);
+}
+.row {
+	display: flex;
+	align-items: center;
+	gap: var(--ds-space-2);
+	flex-wrap: wrap;
+}
+
+/* Card: Background 2 inset into the page, Border 2, sharp. */
+.card {
+	background: var(--ds-bg-2);
+	border: var(--ds-border-hairline) solid var(--ds-line-2);
+	border-radius: var(--ds-radius-sharp);
+	padding: var(--ds-space-4);
+	display: flex;
+	flex-direction: column;
+	gap: var(--ds-space-3);
+}
+.card[data-surface='2'] {
+	--ds-surface-raised: var(--ds-bg-3);
+}
+
+/* Buttons. */
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: flex-start;
+	gap: var(--ds-space-2);
+	text-align: left;
+	white-space: nowrap;
+	user-select: none;
+	height: var(--ds-control-lg);
+	padding: 0 var(--ds-space-4);
+	font-family: var(--ds-font-mono);
+	font-size: var(--ds-text-small);
+	font-weight: var(--ds-weight-medium);
+	letter-spacing: var(--ds-tracking-wide);
+	text-transform: uppercase;
+	border-radius: var(--ds-radius-sharp);
+	border: var(--ds-border-hairline) solid transparent;
+	cursor: pointer;
+	transition:
+		opacity var(--ds-duration-fast),
+		background-color var(--ds-duration-fast),
+		color var(--ds-duration-fast);
+}
+.btn:disabled {
+	opacity: 0.4;
+	pointer-events: none;
+}
+.btn.primary {
+	background: var(--ds-fg-1);
+	color: var(--ds-surface);
+}
+.btn.primary:hover {
+	opacity: 0.85;
+}
+.btn.primary:active {
+	opacity: 0.75;
+}
+.btn.secondary,
+.btn.destructive {
+	background: var(--ds-surface-raised);
+	border-color: var(--ds-surface-line);
+	color: var(--ds-fg-2);
+}
+.btn.secondary:hover,
+.btn.destructive:hover {
+	color: var(--ds-fg-1);
+	background-image: linear-gradient(var(--ds-tint-hover), var(--ds-tint-hover));
+}
+.btn.secondary:active,
+.btn.destructive:active {
+	background-image: linear-gradient(var(--ds-tint-active), var(--ds-tint-active));
+}
+.btn.destructive {
+	color: var(--ds-fg-1);
+}
+.btn.destructive :global(svg),
+.btn.destructive svg {
+	color: var(--ds-accent-2);
+}
+.btn.ghost {
+	background: transparent;
+	color: var(--ds-fg-2);
+}
+.btn.ghost:hover {
+	background: var(--ds-tint-hover);
+	color: var(--ds-fg-1);
+}
+.btn.block {
+	width: 100%;
+	justify-content: center;
+}
+
+/* Status rows. Lights are badge-scale accent/semantic dots, never fills. */
+.status-row {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: var(--ds-space-1) var(--ds-space-3);
+	align-items: baseline;
+}
+.light {
+	width: 8px;
+	height: 8px;
+	border-radius: var(--ds-radius-pill);
+	display: inline-block;
+	transform: translateY(-1px);
+}
+.light.ok {
+	background: var(--ds-positive);
+}
+.light.wait {
+	background: var(--ds-caution);
+}
+.light.bad {
+	background: var(--ds-accent-2);
+}
+.light.off {
+	background: var(--ds-line-3);
+}
+.status-label {
+	color: var(--ds-fg-1);
+}
+.status-text {
+	grid-column: 2;
+	color: var(--ds-fg-2);
+	font-size: var(--ds-text-small);
+	line-height: var(--ds-leading-small);
+}
+
+/* Paste target (fallback when the clipboard can't be read). */
+textarea.paste {
+	width: 100%;
+	box-sizing: border-box;
+	min-height: 72px;
+	resize: vertical;
+	background: var(--ds-bg-2);
+	color: var(--ds-fg-1);
+	border: var(--ds-border-hairline) solid var(--ds-line-2);
+	border-radius: var(--ds-radius-field);
+	padding: var(--ds-space-3);
+	font-family: var(--ds-font-mono);
+	font-size: var(--ds-text-small);
+	-webkit-text-security: disc;
+}
+
+/* Installer log: technical, so DM Mono. */
+.log {
+	background: var(--ds-bg-2);
+	border: var(--ds-border-hairline) solid var(--ds-line-1);
+	border-radius: var(--ds-radius-sharp);
+	padding: var(--ds-space-3);
+	font-family: var(--ds-font-mono);
+	font-size: var(--ds-text-micro);
+	line-height: var(--ds-leading-micro);
+	color: var(--ds-fg-2);
+	max-height: 220px;
+	overflow: auto;
+	white-space: pre-wrap;
+	word-break: break-word;
+	margin: 0;
+}
+
+.progress {
+	height: 2px;
+	background: var(--ds-line-1);
+	overflow: hidden;
+	position: relative;
+}
+.progress::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	width: 30%;
+	background: var(--ds-fg-1);
+	animation: indeterminate 1.4s ease-in-out infinite;
+}
+@keyframes indeterminate {
+	from {
+		transform: translateX(-100%);
+	}
+	to {
+		transform: translateX(340%);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.progress::after {
+		animation: none;
+		width: 100%;
+		opacity: 0.4;
+	}
+}
+
+.error {
+	display: flex;
+	gap: var(--ds-space-2);
+	align-items: flex-start;
+	color: var(--ds-fg-1);
+	font-size: var(--ds-text-small);
+	line-height: var(--ds-leading-small);
+}
+.error :global(svg) {
+	color: var(--ds-accent-2-text);
+	margin-top: 1px;
+}
+.positive {
+	color: var(--ds-positive-text);
+}
+
+details > summary {
+	cursor: pointer;
+	color: var(--ds-fg-3);
+	font-family: var(--ds-font-mono);
+	font-size: var(--ds-text-micro);
+	letter-spacing: var(--ds-tracking-label);
+	text-transform: uppercase;
+}
+
+footer {
+	padding: var(--ds-space-3) var(--ds-space-6);
+	color: var(--ds-fg-3);
+	font-family: var(--ds-font-mono);
+	font-size: var(--ds-text-micro);
+	border-top: var(--ds-border-hairline) solid var(--ds-line-1);
+}
