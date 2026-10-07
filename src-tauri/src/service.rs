@@ -9,6 +9,22 @@ use std::time::Duration;
 
 pub const SERVICE_BASE: &str = "http://127.0.0.1:8069";
 
+/// Test-only: a different port for the service, so tools/e2e-smoke.py on a machine that is already
+/// set up can never reach (or delete models from) that machine's real service. Unset in normal
+/// use; when set, the GUI also hosts the service on it (runtime.rs `spawn_service`).
+pub const TEST_PORT_ENV: &str = "AIPOTLUCK_GUI_TEST_SERVICE_PORT";
+
+pub fn test_port() -> Option<u16> {
+    std::env::var(TEST_PORT_ENV).ok()?.parse().ok()
+}
+
+fn base() -> String {
+    match test_port() {
+        Some(port) => format!("http://127.0.0.1:{port}"),
+        None => SERVICE_BASE.to_string(),
+    }
+}
+
 /// Route prefixes upstream's `_StatusHandler` serves, per method. Kept in step with upstream by
 /// `conformance/` (an unclassified new route fails the surface check).
 pub fn allowed(method: &str, path: &str) -> bool {
@@ -51,7 +67,7 @@ pub fn call(method: &str, path: &str, body: Option<Value>) -> Result<ServiceResp
             15
         }))
         .build();
-    let url = format!("{SERVICE_BASE}{path}");
+    let url = format!("{}{path}", base());
     let req = agent.request(method, &url);
     let result = match body {
         Some(b) => req.send_json(b),

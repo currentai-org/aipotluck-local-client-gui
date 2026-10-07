@@ -142,6 +142,11 @@ def main() -> int:
     home = Path(tempfile.mkdtemp(prefix="aipotluck-e2e-home-"))
     env = {k: v for k, v in os.environ.items() if not k.startswith(("XDG_", "DBUS_"))}
     env["HOME"] = str(home)
+    # Never the real ports: on a machine that is already set up, 8069/8080 are its real service and
+    # llama-server, and this test pairs, unpairs and (in places) deletes. The app honours these
+    # test-only variables (src-tauri/src/service.rs TEST_PORT_ENV).
+    env["AIPOTLUCK_GUI_TEST_SERVICE_PORT"] = str(free_port())
+    env["AIPOTLUCK_GUI_TEST_LLAMA_PORT"] = str(free_port())
     env.pop("WAYLAND_DISPLAY", None)  # the app must come up on the X display chosen below
     procs = []
     if args.visible:
@@ -233,6 +238,9 @@ def main() -> int:
         while time.time() < end and ("Ready" not in page or "Can’t reach" not in page and "Can't reach" not in page):
             time.sleep(3); page = wd.text()
         wd.shot("5-running")
+        assert "Running while this window is open" in page, (
+            f"the app is not talking to the service it hosts on the test port -- is something else "
+            f"answering there?\n{page}")
         assert "Ready" in page, f"inference server never reported Ready:\n{page}"
         assert "reach AI Potluck" in page, f"fake tunnel was not reported as unreachable:\n{page}"
         assert FAKE_PAIRING["tunnelSecret"] not in page
