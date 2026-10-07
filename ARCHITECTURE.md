@@ -5,7 +5,7 @@
 ```
 ┌──────────────────── AI Potluck Local Client (Tauri v2) ────────────────────┐
 │  ui/ (Svelte 5, Alpha DS tokens)                                            │
-│     │  invoke(): app_state · install_plan · setup_device ·                  │
+│     │  invoke(): app_state · install_plan · model_size · setup_device ·     │
 │     │            clipboard_pairing · pair · unpair · service_call ·         │
 │     │            open_settings_page                                         │
 │  src-tauri/ (Rust)                                                          │
@@ -83,6 +83,23 @@ the one we test (`tools/bundled-python.sh`) is the one users run.
   A paste box is the fallback.
 - **Status** shows `/healthz` plus `/status`. The tunnel row reads `tunnel_connected`, not
   `running`: upstream's README documents newt running for 20+ hours while never connected.
+- **Models** (on the status screen, once paired) is upstream's HTTP model API, through the proxy:
+  - the list is `GET /models`, the same `model_ops.list_models` the CLI's `list` prints. Each row
+    carries its LocalScore, band, speed and the CLI's notes (held back, not sized, not measured,
+    stale).
+  - Add is `POST /models`. Upstream refuses an oversized model before downloading (`409
+    too_large_for_device`); only then does the UI offer "Download anyway" (`allow_oversized`).
+  - the delete icon is `DELETE /models`, confirmed on the row first, since it deletes the weights.
+  - Benchmark is `POST /models/benchmark` for every model.
+
+  Add and Benchmark are upstream jobs. The UI follows the newest unfinished one in `GET /jobs`,
+  whoever started it (this window, the CLI, aipotluck.org), showing upstream's latest progress
+  step in words, an elapsed clock and how long it may take: the download size from
+  `model_preflight` and upstream's per-model measuring budget (`PROBE_BUDGET_SECONDS`, held to the
+  conformance baseline by a UI test). Upstream runs one job at a time, so the controls wait too.
+  There is no byte-level download progress: upstream's job reports steps, not bytes, and
+  guessing from the cache directory would re-implement llama.cpp's cache resolution. Byte progress
+  in the job is an upstream proposal.
 - **Unpair** runs `cli logout`.
 
 ### Hosts with no service manager
@@ -103,13 +120,16 @@ The UI says plainly that the server only runs while the window is open.
 - **Proxy allow-list:** `service.rs` allows only routes upstream serves, per method. It rejects `..`,
   absolute URLs and other methods, and a test checks the allow-list against the upstream baseline.
 - **Capabilities:** only `core:default`. There is no shell or filesystem plugin, so the webview can
-  do exactly the eight commands above and nothing else.
+  do exactly the nine commands above and nothing else.
 - **Secret handling:** see CLAUDE.md "Hard rules".
 
 ## Known gaps (v0.1)
 
-- Models screen (pull/list/remove/benchmark) and a diagnostics view are not built yet. They are
-  `todo` in `conformance/coverage.json`.
+- A diagnostics view is not built yet (`todo` in `conformance/coverage.json`).
+- Removing a model fails today for every model that has been sized (all pulled ones): upstream
+  deletes through llama-server's router, which refuses preset-defined models ("not removable (not
+  from cache)"). The CLI's `remove` fails the same way. The UI shows upstream's error; the e2e
+  test reports it as a note. See docs/research/2026-10-07-upstream-proposals.md.
 - Source-build hosts (no prebuilt llama.cpp for the machine) may need apt packages. Upstream only
   installs them with consent through an interactive prompt the GUI can't answer, so the log shows
   upstream's instructions instead.

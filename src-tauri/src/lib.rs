@@ -217,12 +217,23 @@ async fn install_plan(state: State<'_, AppState>, model_hf: Option<String>) -> R
     let model = checked_model(model_hf)?;
     let rt = rt(&state)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let mut plan = rt.plan(model.as_deref())?;
+        let mut plan = rt.plan(model.as_deref(), false)?;
         plan["client"] = json!({ "bytes": rt.client_bytes(), "upstream_sha": rt.upstream_sha });
         Ok(plan)
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// How big a model's download is, by upstream's own reckoning (model_preflight), for the progress
+/// shown while Add downloads it. `null` bytes when Hugging Face can't say.
+#[tauri::command]
+async fn model_size(state: State<'_, AppState>, model_hf: String) -> Result<Value, String> {
+    let model = checked_model(Some(model_hf))?.ok_or("no model given")?;
+    let rt = rt(&state)?;
+    tauri::async_runtime::spawn_blocking(move || Ok(rt.plan(Some(&model), true)?["model"].take()))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// One click: upstream's installer with its defaults (auto-detected backend, default model
@@ -412,6 +423,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_state,
             install_plan,
+            model_size,
             setup_device,
             clipboard_pairing,
             pair,

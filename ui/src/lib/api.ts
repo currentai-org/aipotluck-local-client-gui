@@ -12,6 +12,7 @@ export const api = {
 	appState: () => invoke<AppState>('app_state'),
 	setupDevice: (modelHf?: string) => invoke<void>('setup_device', { modelHf: modelHf || null }),
 	installPlan: (modelHf?: string) => invoke<InstallPlan>('install_plan', { modelHf: modelHf || null }),
+	modelSize: (modelHf: string) => invoke<InstallPlan['model']>('model_size', { modelHf }),
 	clipboardPairing: () => invoke<PairingPreview | null>('clipboard_pairing'),
 	pair: (pasted?: string) => invoke<void>('pair', { pasted: pasted ?? null }),
 	unpair: () => invoke<void>('unpair'),
