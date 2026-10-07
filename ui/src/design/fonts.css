@@ -1,0 +1,19 @@
+/* OFL fonts bundled with the app (see fonts/README.md) -- no network fetch, the CSP forbids it. */
+@font-face {
+	font-family: 'Plus Jakarta Sans';
+	src: url('./fonts/plus_jakarta_sans.ttf') format('truetype');
+	font-weight: 200 800;
+	font-display: block;
+}
+@font-face {
+	font-family: 'DM Mono';
+	src: url('./fonts/dm_mono_regular.ttf') format('truetype');
+	font-weight: 400;
+	font-display: block;
+}
+@font-face {
+	font-family: 'DM Mono';
+	src: url('./fonts/dm_mono_medium.ttf') format('truetype');
+	font-weight: 500;
+	font-display: block;
+}
