@@ -52,6 +52,9 @@ ICONS = [
     "arrow-left-line",
     "settings-3-line",
     "check-line",
+    "add-line",
+    "dashboard-3-line",
+    "close-line",
 ]
 
 
