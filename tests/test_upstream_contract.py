@@ -28,6 +28,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 UPSTREAM = Path(os.environ.get("AIPOTLUCK_UPSTREAM_DIR") or ROOT / "upstream" / "aitpotluck-local-client")
 PROBE = ROOT / "sidecar" / "gui_probe.py"
+PLAN = ROOT / "sidecar" / "gui_plan.py"
 
 
 def _free_port() -> int:
@@ -183,3 +184,61 @@ def test_status_fields_the_status_screen_reads_are_present_while_logged_out(host
         assert key in status, key
     assert status["logged_in"] is False
     assert status["llama_server"] is None and status["tunnel"] is None
+
+
+def _plan(home: Path, *args: str) -> dict:
+    env = _env(home)
+    # Keep the outside world out: every request goes to a proxy on a closed port and fails fast.
+    env.update(HTTPS_PROXY="http://127.0.0.1:9", HTTP_PROXY="http://127.0.0.1:9", NO_PROXY="")
+    env.pop("no_proxy", None)
+    for token in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_TOKEN"):
+        env.pop(token, None)
+    out = subprocess.run(
+        [sys.executable, str(PLAN), *args], cwd=UPSTREAM, env=env, capture_output=True, text=True, timeout=60
+    )
+    assert out.returncode == 0, out.stderr
+    return json.loads(out.stdout)
+
+
+def test_install_plan_offline_reports_unknown_sizes_and_never_fails(home: Path):
+    plan = _plan(home)
+    assert plan["llama_cpp"]["bytes"] is None
+    assert plan["newt"]["bytes"] is None
+    assert plan["model"]["bytes"] is None
+    # It still names what would be installed: upstream's own pins, for this host.
+    llama_pin = json.loads((UPSTREAM / "llama_version.json").read_text())
+    assert plan["llama_cpp"]["tag"] == llama_pin["tag"]
+    if not plan["llama_cpp"]["source_build"]:
+        assert plan["llama_cpp"]["asset_key"] in llama_pin["assets"]
+        assert plan["llama_cpp"]["file"] == llama_pin["assets"][plan["llama_cpp"]["asset_key"]]["file"]
+    assert plan["newt"]["tag"] == json.loads((UPSTREAM / "newt_version.json").read_text())["tag"]
+
+
+def test_install_plan_default_model_is_the_one_upstreams_installer_would_pull(home: Path):
+    parsed = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; sys.path.insert(0, '.');"
+         "from aipotluck.installer.install import build_arg_parser;"
+         "print(build_arg_parser().parse_args([]).model_hf)"],
+        cwd=UPSTREAM, env=_env(home), capture_output=True, text=True, timeout=30,
+    )
+    assert parsed.returncode == 0, parsed.stderr
+    plan = _plan(home)
+    assert plan["model"]["default_id"] == parsed.stdout.strip()
+    assert plan["model"]["id"] == plan["model"]["default_id"] and plan["model"]["is_default"] is True
+
+
+def test_customized_model_is_planned_and_handed_to_upstream_in_the_form_it_parses(home: Path):
+    chosen = "unsloth/Qwen3-4B-GGUF:Q4_K_M"
+    plan = _plan(home, f"--model-hf={chosen}")
+    assert plan["model"]["id"] == chosen and plan["model"]["is_default"] is False
+    # setup_device passes the override as one `--model-hf=<id>` token; upstream must read it back.
+    parsed = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; sys.path.insert(0, '.');"
+         "from aipotluck.installer.install import build_arg_parser;"
+         f"print(build_arg_parser().parse_args(['--backend', 'auto', '--model-hf={chosen}']).model_hf)"],
+        cwd=UPSTREAM, env=_env(home), capture_output=True, text=True, timeout=30,
+    )
+    assert parsed.returncode == 0, parsed.stderr
+    assert parsed.stdout.strip() == chosen

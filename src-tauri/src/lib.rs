@@ -4,6 +4,7 @@
 //! upstream's own entry points with the bundled Python, or proxy an allow-listed request to the
 //! upstream service on 127.0.0.1:8069.
 
+mod model_id;
 mod pairing;
 mod paths;
 mod runtime;
@@ -196,16 +197,52 @@ fn spawn_task(
     Ok(())
 }
 
-/// One click: upstream's installer with its defaults (auto-detected backend, default model
-/// pre-fetched and sized). On a host with no usable service manager it installs without starting
-/// the OS service, and the GUI hosts upstream's service payload instead.
+/// `None` for upstream's default model; otherwise the id typed into Customize, refused unless it is
+/// a well-formed `owner/repo[:quant]` (see model_id.rs).
+fn checked_model(model_hf: Option<String>) -> Result<Option<String>, String> {
+    match model_hf.as_deref().map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(raw) => model_id::parse(raw).map(Some).ok_or_else(|| {
+            format!("“{raw}” isn’t a Hugging Face model id. Use owner/repo, or owner/repo:QUANT.")
+        }),
+    }
+}
+
+/// What Set up would install, with approximate sizes: the client as unpacked on disk, then
+/// upstream's own choice of llama.cpp build, newt binary and model (sidecar/gui_plan.py).
 #[tauri::command]
-async fn setup_device(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+async fn install_plan(state: State<'_, AppState>, model_hf: Option<String>) -> Result<Value, String> {
+    let model = checked_model(model_hf)?;
+    let rt = rt(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut plan = rt.plan(model.as_deref())?;
+        plan["client"] = json!({ "bytes": rt.client_bytes(), "upstream_sha": rt.upstream_sha });
+        Ok(plan)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// One click: upstream's installer with its defaults (auto-detected backend, default model
+/// pre-fetched and sized), or with the model chosen in Customize. On a host with no usable service
+/// manager it installs without starting the OS service, and the GUI hosts upstream's service
+/// payload instead.
+#[tauri::command]
+async fn setup_device(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    model_hf: Option<String>,
+) -> Result<(), String> {
+    let model = checked_model(model_hf)?;
     let rt = rt(&state)?;
     let probe = tauri::async_runtime::spawn_blocking(move || rt.probe())
         .await
         .map_err(|e| e.to_string())??;
     let mut args = vec!["--backend".to_string(), "auto".to_string()];
+    if let Some(m) = model {
+        // One token, so the value can never be read as a flag of its own.
+        args.push(format!("--model-hf={m}"));
+    }
     if !probe["service_manager_usable"].as_bool().unwrap_or(true) {
         args.push("--no-start".into());
     }
@@ -365,6 +402,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_state,
+            install_plan,
             setup_device,
             clipboard_pairing,
             pair,

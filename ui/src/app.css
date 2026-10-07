@@ -316,3 +316,88 @@ footer {
 	font-size: var(--ds-text-micro);
 	border-top: var(--ds-border-hairline) solid var(--ds-line-1);
 }
+
+/* Setup plan: what will be installed, one row per part, size right. */
+.plan {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--ds-space-3);
+}
+.plan-item {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	gap: var(--ds-space-1) var(--ds-space-3);
+	align-items: baseline;
+}
+.plan-name {
+	color: var(--ds-fg-1);
+}
+.plan-size {
+	color: var(--ds-fg-1);
+	font-size: var(--ds-text-small);
+	white-space: nowrap;
+}
+.plan-detail,
+.plan-note {
+	grid-column: 1 / -1;
+	color: var(--ds-fg-2);
+	overflow-wrap: anywhere;
+}
+.plan-detail {
+	font-family: var(--ds-font-mono);
+}
+.plan-note {
+	color: var(--ds-fg-3);
+	display: flex;
+	gap: var(--ds-space-1);
+	align-items: flex-start;
+}
+.plan-note.warn {
+	color: var(--ds-fg-1);
+}
+.plan-note.warn :global(svg) {
+	color: var(--ds-accent-2-text);
+	margin-top: 2px;
+}
+.plan-total {
+	border-top: var(--ds-border-hairline) solid var(--ds-line-2);
+	padding-top: var(--ds-space-3);
+}
+
+.setup-actions {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	gap: var(--ds-space-2);
+}
+.setup-actions .btn.primary {
+	justify-content: center;
+}
+
+/* Text field (alpha-ds input.recipe.ts): recessed Background 2, Border 2, sharp; Border 3 on
+   hover/focus, Accent 2 when invalid. */
+.input {
+	width: 100%;
+	min-width: 0;
+	box-sizing: border-box;
+	height: var(--ds-control-md);
+	padding: 0 var(--ds-space-3);
+	background: var(--ds-bg-2);
+	color: var(--ds-fg-1);
+	border: var(--ds-border-hairline) solid var(--ds-line-2);
+	border-radius: var(--ds-radius-sharp);
+	font-size: var(--ds-text-small);
+	transition: border-color var(--ds-duration-fast);
+}
+.input::placeholder {
+	color: var(--ds-fg-3);
+}
+.input:hover,
+.input:focus-visible {
+	border-color: var(--ds-line-3);
+}
+.input[aria-invalid='true'] {
+	border-color: var(--ds-accent-2);
+}

@@ -43,8 +43,8 @@
       "note": "Advanced/developer install option; GUI v1 takes upstream's default. The CLI shim upstream installs alongside remains available for these."
     },
     "cli.install_flags.--model-hf": {
-      "status": "not_applicable",
-      "note": "GUI v1 installs upstream's default model; choosing models belongs to the (todo) Models screen via pull."
+      "status": "implemented",
+      "note": "Set up → Customize → Model passes --model-hf=<owner/repo[:quant]> (validated in src-tauri/src/model_id.rs); the setup screen sizes it first with upstream's model_preflight.remote_model_bytes (sidecar/gui_plan.py)."
     },
     "cli.install_flags.--model-path": {
       "status": "not_applicable",
