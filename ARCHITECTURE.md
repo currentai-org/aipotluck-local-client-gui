@@ -5,8 +5,9 @@
 ```
 ┌──────────────────── AI Potluck Local Client (Tauri v2) ────────────────────┐
 │  ui/ (Svelte 5, Alpha DS tokens)                                            │
-│     │  invoke(): app_state · setup_device · clipboard_pairing · pair ·      │
-│     │            unpair · service_call · open_settings_page                 │
+│     │  invoke(): app_state · install_plan · setup_device ·                  │
+│     │            clipboard_pairing · pair · unpair · service_call ·         │
+│     │            open_settings_page                                         │
 │  src-tauri/ (Rust)                                                          │
 │     ├─ runtime.rs   unpack bundled Python + upstream source; run upstream   │
 │     ├─ service.rs   allow-listed proxy to 127.0.0.1:8069                    │
@@ -26,12 +27,13 @@ command to run, with which flags, and shows the result.
 
 ## The bundled runtime
 
-`tools/stage-runtime.sh` stages three things into `src-tauri/resources/runtime/`, and Tauri ships
+`tools/stage-runtime.sh` stages four things into `src-tauri/resources/runtime/`, and Tauri ships
 them as app resources:
 - `python-<tag>-<target>.tar.gz`: python-build-standalone 3.12, pinned with sha256 in
   `runtime/python_version.json`, the same pin style as upstream's `llama_version.json`;
 - `upstream-<sha12>.tar.gz`: `git archive` of the pinned submodule commit;
-- `gui_probe.py`: our read-only state probe.
+- `gui_probe.py`: our read-only state probe;
+- `gui_plan.py`: our read-only install plan (what Set up would install, and its sizes).
 
 On first launch `runtime.rs` verifies each archive's sha256 and unpacks it, atomically, into
 `<data_home>/aipotluck/gui-runtime/` (beside upstream's own `<data_home>/aipotluck/llama.cpp/`).
@@ -50,7 +52,17 @@ the one we test (`tools/bundled-python.sh`) is the one users run.
 
 ## Flows
 
-- **Set up** runs `install --backend auto`. That is upstream's default path:
+- **Plan.** Before Set up, the screen lists what will be installed (client, llama.cpp, newt, model)
+  with approximate sizes. `gui_plan.py` asks upstream's own code which llama.cpp build and newt
+  binary this host gets and which model is the default, sizes the model with upstream's
+  `model_preflight.remote_model_bytes`, and sizes the two binaries with a HEAD request to the
+  release URL upstream downloads from. The client figure is the unpacked runtime on disk. A size
+  that can't be read shows as unknown, never as zero.
+- **Customize** opens a settings page. Its one setting so far is the model: any Hugging Face
+  `owner/repo[:quant]`, checked in `model_id.rs` and passed as a single `--model-hf=<id>` token.
+  Saving re-sizes the model row and the total.
+- **Set up** runs `install --backend auto` (plus `--model-hf=<id>` if customized). That is
+  upstream's default path:
   - detect the hardware;
   - fetch and verify a llama.cpp build, or use upstream's binary cache or source build;
   - pre-pull and size the default model;
@@ -91,7 +103,7 @@ The UI says plainly that the server only runs while the window is open.
 - **Proxy allow-list:** `service.rs` allows only routes upstream serves, per method. It rejects `..`,
   absolute URLs and other methods, and a test checks the allow-list against the upstream baseline.
 - **Capabilities:** only `core:default`. There is no shell or filesystem plugin, so the webview can
-  do exactly the seven commands above and nothing else.
+  do exactly the eight commands above and nothing else.
 - **Secret handling:** see CLAUDE.md "Hard rules".
 
 ## Known gaps (v0.1)
