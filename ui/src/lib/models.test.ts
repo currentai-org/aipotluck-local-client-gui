@@ -102,7 +102,7 @@ describe('jobs', () => {
 	});
 
 	it('titles name the model', () => {
-		expect(jobTitle(job())).toBe('Adding Qwen3-4B-GGUF');
+		expect(jobTitle(job())).toBe('Adding Qwen3-4B-GGUF Q4_K_M');
 		expect(jobTitle(job({ kind: 'benchmark', model: null }))).toBe('Benchmarking every model');
 	});
 
@@ -120,7 +120,7 @@ describe('jobs', () => {
 			model: null,
 			progress: said('re-sizing a/one:Q4', 'measuring a/one:Q4', 're-sizing b/two:Q8', 'measuring b/two:Q8')
 		});
-		expect(jobStage(j, 3)).toBe('Measuring speed · two (2 of 3)');
+		expect(jobStage(j, 3)).toBe('Measuring speed · two Q8 (2 of 3)');
 	});
 
 	it('the hint quotes the download size and upstream’s measuring budget', () => {
@@ -139,7 +139,7 @@ describe('jobs', () => {
 
 	it('outcomes: added with a score, rejected by upstream, failed', () => {
 		expect(jobOutcome(job({ state: 'succeeded', result: { score: { localscore: 312.2 } } })).text).toBe(
-			'Added Qwen3-4B-GGUF, LocalScore 312.'
+			'Added Qwen3-4B-GGUF Q4_K_M, LocalScore 312.'
 		);
 		const rejected = jobOutcome(
 			job({ state: 'succeeded', result: { rejected: true, rejection: 'a turn would take 4 minutes', removed: true } })
@@ -150,6 +150,29 @@ describe('jobs', () => {
 			text: 'download failed: 404',
 			warn: true
 		});
+	});
+
+	it('a benchmark that upstream declined to measure says why', () => {
+		const busy = 'This machine is still busy, so a measurement would describe the contention rather than the model. Try again when it’s idle.';
+		const out = jobOutcome(
+			job({
+				kind: 'benchmark',
+				model: null,
+				state: 'succeeded',
+				result: {
+					results: [
+						{ model: 'a/one-GGUF:Q8_0', measured: false, measurement_skipped: busy },
+						{ model: 'a/two-GGUF:Q4', measured: false, measurement_skipped: busy }
+					]
+				}
+			})
+		);
+		expect(out.warn).toBe(true);
+		expect(out.text).toBe(`Measured 0 of 2. one-GGUF Q8_0: ${busy}`);
+		expect(
+			jobOutcome(job({ kind: 'benchmark', model: null, state: 'succeeded', result: { results: [{ measured: true }, { measured: true }] } }))
+				.text
+		).toBe('Benchmark finished for all 2 models.');
 	});
 
 	it('only an oversized refusal offers "add anyway"', () => {

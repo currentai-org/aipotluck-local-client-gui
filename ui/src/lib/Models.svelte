@@ -17,8 +17,8 @@
 		jobOutcome,
 		jobStage,
 		jobTitle,
+		modelName,
 		modelRow,
-		splitModelId,
 		type Job,
 		type ModelListing,
 		type Note
@@ -125,7 +125,7 @@
 		deleteError = null;
 		try {
 			const r = await api.service('DELETE', `/models?model=${encodeURIComponent(id)}`);
-			if (r.status === 200) outcome = { text: `Removed ${splitModelId(id).repo}.` };
+			if (r.status === 200) outcome = { text: `Removed ${modelName(id)}.` };
 			else deleteError = errorMessage(r.body, `Couldn’t remove it (HTTP ${r.status}).`);
 		} catch (e) {
 			deleteError = String(e);
@@ -193,7 +193,7 @@
 					{/each}
 					{#if confirming === row.id}
 						<div class="confirm">
-							<p class="small">Delete {row.repo} and its downloaded weights from this computer?</p>
+							<p class="small">Delete {modelName(row.id)} and its downloaded weights from this computer?</p>
 							<div class="row">
 								<button class="btn destructive" disabled={!!deleting} onclick={() => remove(row.id)}>
 									<Icon name="delete-bin-line" /> Delete

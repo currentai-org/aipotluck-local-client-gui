@@ -69,6 +69,12 @@ export function splitModelId(id: string): { owner: string; repo: string; quant: 
 	};
 }
 
+/** How a single model is named in a sentence: its repo, plus the quant (two quants of one repo are common). */
+export function modelName(id: string): string {
+	const { repo, quant } = splitModelId(id);
+	return quant ? `${repo} ${quant}` : repo;
+}
+
 export type Note = { text: string; warn?: boolean };
 export type ModelRow = {
 	id: string;
@@ -128,7 +134,7 @@ export function activeJob(jobs: Job[]): Job | null {
 }
 
 export function jobTitle(job: Job): string {
-	const name = job.model ? splitModelId(job.model).repo : null;
+	const name = job.model ? modelName(job.model) : null;
 	if (job.kind === 'pull') return `Adding ${name ?? 'a model'}`;
 	if (job.kind === 'benchmark') return name ? `Benchmarking ${name}` : 'Benchmarking every model';
 	return `${job.kind}${name ? ` ${name}` : ''}`;
@@ -156,7 +162,7 @@ export function jobStage(job: Job, modelCount = 0): string {
 	if (job.kind === 'benchmark' && !job.model) {
 		const done = job.progress.filter((p) => p.message.startsWith('re-sizing ')).length;
 		const current = last.split(' ').pop();
-		const name = current?.includes('/') ? splitModelId(current).repo : null;
+		const name = current?.includes('/') ? modelName(current) : null;
 		if (name) stage += ` · ${name}`;
 		if (modelCount > 1 && done) stage += ` (${Math.min(done, modelCount)} of ${modelCount})`;
 	}
@@ -197,7 +203,7 @@ export function formatElapsed(seconds: number): string {
 
 /** What a finished job amounts to, in a sentence, for the line left behind once it's done. */
 export function jobOutcome(job: Job): Note {
-	const name = job.model ? splitModelId(job.model).repo : null;
+	const name = job.model ? modelName(job.model) : null;
 	if (job.state === 'failed') return { text: job.error ?? 'It didn’t finish.', warn: true };
 	const r = job.result ?? {};
 	if (job.kind === 'pull') {
@@ -211,12 +217,20 @@ export function jobOutcome(job: Job): Note {
 		};
 	}
 	if (job.kind === 'benchmark') {
-		const results = (r.results as { measured?: boolean; held_back?: boolean }[] | undefined) ?? [];
-		const failed = results.filter((x) => !x.measured).length;
+		type Measured = { model?: string; measured?: boolean; measurement_skipped?: string; rejection?: string };
+		const results = (r.results as Measured[] | undefined) ?? [];
+		const unmeasured = results.filter((x) => !x.measured);
 		if (!results.length) return { text: 'There were no models to benchmark.' };
-		return failed
-			? { text: `Benchmarked ${results.length - failed} of ${results.length}; the rest couldn’t be measured.`, warn: true }
-			: { text: `Benchmark finished for ${results.length === 1 ? (name ?? '1 model') : `all ${results.length} models`}.` };
+		if (!unmeasured.length)
+			return { text: `Benchmark finished for ${results.length === 1 ? (name ?? '1 model') : `all ${results.length} models`}.` };
+		// Upstream says why, per model (a busy machine, a model that won't load); pass the first on.
+		const first = unmeasured[0];
+		const why = first.measurement_skipped ?? first.rejection;
+		const who = first.model ? modelName(first.model) : null;
+		return {
+			text: `Measured ${results.length - unmeasured.length} of ${results.length}.${why ? ` ${who ? `${who}: ` : ''}${why}` : ''}`,
+			warn: true
+		};
 	}
 	return { text: 'Done.' };
 }

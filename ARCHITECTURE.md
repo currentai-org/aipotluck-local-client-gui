@@ -126,8 +126,10 @@ The UI says plainly that the server only runs while the window is open.
 ## Known gaps (v0.1)
 
 - A diagnostics view is not built yet (`todo` in `conformance/coverage.json`).
-- Removing a model goes through the running router, so it fails (`delete_failed`, shown to the
-  user) while llama-server is down.
+- Removing a model fails today for every model that has been sized (all pulled ones): upstream
+  deletes through llama-server's router, which refuses preset-defined models ("not removable (not
+  from cache)"). The CLI's `remove` fails the same way. The UI shows upstream's error; the e2e
+  test reports it as a note. See docs/research/2026-10-07-upstream-proposals.md.
 - Source-build hosts (no prebuilt llama.cpp for the machine) may need apt packages. Upstream only
   installs them with consent through an interactive prompt the GUI can't answer, so the log shows
   upstream's instructions instead.
