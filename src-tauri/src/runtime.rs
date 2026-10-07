@@ -276,13 +276,18 @@ impl Runtime {
         if let Some(port) = crate::service::test_port() {
             cmd.args(["--port", &port.to_string()]);
         }
-        cmd.stdout(log)
-        .stderr(log2);
+        cmd.stdout(log).stderr(log2);
         // A GUI-hosted service must never outlive the GUI, even when the GUI dies without running
         // its exit handler (killed, crashed, session torn down). On Linux the kernel enforces that:
         // SIGTERM the child the moment its parent dies -- which upstream's service handles by
         // stopping llama-server and newt cleanly. Found by tools/e2e-smoke.py: a WebDriver session
         // teardown killed the app and left the service orphaned.
+        //
+        // "Parent" here is the *thread* that forked, not the process, so the spawn itself happens
+        // on the spawner thread (on_spawner_thread), which lives as long as the app. Spawned from
+        // a Tauri worker thread instead, the service was SIGTERMed whenever that thread retired:
+        // its own log showed it stopping 45ms after starting newt, and a stop racing newt's start
+        // orphaned newt -- a tunnel left open with no service behind it.
         #[cfg(target_os = "linux")]
         unsafe {
             use std::os::unix::process::CommandExt;
@@ -293,9 +298,41 @@ impl Runtime {
                 Ok(())
             });
         }
-        cmd.spawn()
+        on_spawner_thread(move || cmd.spawn())
             .map_err(|e| format!("could not start the service: {e}"))
     }
+}
+
+type SpawnJob = Box<dyn FnOnce() + Send>;
+
+/// Run `f` on the one thread that starts hosted services, and wait for its result. That thread
+/// is never joined and never exits before the process does (see spawn_service for why).
+fn on_spawner_thread<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    use std::sync::{mpsc, Mutex, OnceLock};
+    static SPAWNER: OnceLock<Mutex<mpsc::Sender<SpawnJob>>> = OnceLock::new();
+    let spawner = SPAWNER.get_or_init(|| {
+        let (tx, rx) = mpsc::channel::<SpawnJob>();
+        std::thread::Builder::new()
+            .name("hosted-service-spawner".into())
+            .spawn(move || {
+                for job in rx {
+                    job();
+                }
+            })
+            .expect("could not start the hosted-service spawner thread");
+        Mutex::new(tx)
+    });
+    let (done_tx, done_rx) = mpsc::channel();
+    spawner
+        .lock()
+        .unwrap()
+        .send(Box::new(move || {
+            let _ = done_tx.send(f());
+        }))
+        .expect("hosted-service spawner thread is gone");
+    done_rx
+        .recv()
+        .expect("hosted-service spawner thread is gone")
 }
 
 /// Write the pairing JSON to a private temp file (0600, inside our own runtime dir), for
@@ -317,4 +354,27 @@ pub fn write_private_credentials(raw: &str) -> Result<PathBuf, String> {
     f.write_all(raw.trim().as_bytes())
         .map_err(|e| e.to_string())?;
     Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::on_spawner_thread;
+
+    /// What the kernel ties PR_SET_PDEATHSIG to is the forking thread, so every call must land on
+    /// the same long-lived thread -- whichever short-lived thread asked.
+    #[test]
+    fn hosted_services_are_always_started_from_one_thread_that_outlives_the_caller() {
+        let ids: Vec<_> = (0..4)
+            .map(|_| {
+                std::thread::spawn(|| on_spawner_thread(|| std::thread::current().id()))
+                    .join()
+                    .unwrap()
+            })
+            .collect();
+        assert!(
+            ids.windows(2).all(|w| w[0] == w[1]),
+            "spawns landed on different threads: {ids:?}"
+        );
+        assert_ne!(ids[0], std::thread::current().id());
+    }
 }
