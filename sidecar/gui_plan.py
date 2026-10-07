@@ -26,6 +26,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -40,11 +41,20 @@ _TIMEOUT_SECONDS = 10.0
 
 def _content_length(url: str) -> int | None:
     request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "aipotluck-local-client-gui"})
-    try:
-        with urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS) as response:
-            value = response.headers.get("Content-Length")
-    except (urllib.error.URLError, OSError, ValueError):
-        return None
+    value = None
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS) as response:
+                value = response.headers.get("Content-Length")
+            break
+        except urllib.error.HTTPError as exc:
+            # GitHub's release redirects occasionally answer 500 for a minute or two (seen
+            # 2026-10-07). One quick retry rides that out; a 4xx won't change, so give up.
+            if exc.code < 500 or attempt:
+                return None
+            time.sleep(1)
+        except (urllib.error.URLError, OSError, ValueError):
+            return None  # offline or timed out: retrying would only make the screen wait longer
     try:
         size = int(value) if value else 0
     except ValueError:

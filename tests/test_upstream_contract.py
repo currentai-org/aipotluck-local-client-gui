@@ -242,3 +242,46 @@ def test_customized_model_is_planned_and_handed_to_upstream_in_the_form_it_parse
     )
     assert parsed.returncode == 0, parsed.stderr
     assert parsed.stdout.strip() == chosen
+
+
+def _size_with_flaky_server(home: Path, statuses: list[int]) -> tuple[object, int]:
+    """Ask gui_plan's size lookup about a local server answering `statuses` in turn (then 200)."""
+    import http.server
+    import threading
+
+    seen = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            seen.append(self.path)
+            code = statuses[len(seen) - 1] if len(seen) <= len(statuses) else 200
+            self.send_response(code)
+            self.send_header("Content-Length", "16844042" if code == 200 else "0")
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        out = subprocess.run(
+            [sys.executable, "-c",
+             f"import sys; sys.path.insert(0, {str(PLAN.parent)!r}); import gui_plan;"
+             f"print(gui_plan._content_length('http://127.0.0.1:{server.server_port}/asset'))"],
+            cwd=UPSTREAM, env=_env(home), capture_output=True, text=True, timeout=30,
+        )
+    finally:
+        server.shutdown()
+    assert out.returncode == 0, out.stderr
+    value = out.stdout.strip()
+    return (None if value == "None" else int(value)), len(seen)
+
+
+def test_a_passing_github_server_error_does_not_leave_a_size_unknown(home: Path):
+    assert _size_with_flaky_server(home, [500]) == (16844042, 2)
+
+
+def test_a_size_lookup_that_cannot_succeed_is_not_retried(home: Path):
+    assert _size_with_flaky_server(home, [404]) == (None, 1)
+    assert _size_with_flaky_server(home, [500, 502]) == (None, 2)
