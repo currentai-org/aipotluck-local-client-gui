@@ -13,6 +13,7 @@
     ],
     "job_keys": [
       "created_at",
+      "download",
       "error",
       "error_code",
       "finished_at",
@@ -48,10 +49,10 @@
   "cli": {
     "files": {
       "cli.py": {
-        "sha256": "a0d2b461716964ea882c6d04a9271f2fcd0470a956438bb01d84d004161434d0"
+        "sha256": "05ca16964a48cd23cf5e532c1c486efc71eb33c7ba1a5eab015f7ea8de655f4e"
       },
       "install.py": {
-        "sha256": "161f0854556fd25a86f53d2aa8d59eab4442d23f2847b606a44ff000b5ef1297"
+        "sha256": "746d61a1f00415b4c7f42290f1a5a99fc5be6a0362d1457f380b452879140dcd"
       }
     },
     "install_choice_sets": {
@@ -421,7 +422,7 @@
           "--force": {
             "choices": null,
             "default": null,
-            "help": "Keep the model even if it benchmarks too slowly to finish a conversation turn",
+            "help": "Download it even if it looks too big for this device, and keep it even if sizing finds it cannot serve a conversation here",
             "names": [
               "--force"
             ],
@@ -432,7 +433,7 @@
           "--skip-benchmark": {
             "choices": null,
             "default": null,
-            "help": "Download and size only, without measuring speed (no grade is recorded)",
+            "help": null,
             "names": [
               "--skip-benchmark"
             ],
@@ -454,7 +455,7 @@
           "model": {
             "choices": null,
             "default": null,
-            "help": "Hugging Face repo[:quant], e.g. bartowski/Qwen2.5-0.5B-Instruct-GGUF:Q4_K_M -- passed straight through to llama-server's own -hf downloader",
+            "help": "Hugging Face repo[:quant], e.g. bartowski/Qwen2.5-0.5B-Instruct-GGUF:Q4_K_M -- passed straight through to llama-server's own downloader",
             "names": [
               "model"
             ],
@@ -629,10 +630,15 @@
       "tag",
       "tunnel"
     ],
+    "model_pull.py": [
+      "last",
+      "last_decile"
+    ],
     "runner.py": [
       "binary",
       "detail",
       "endpoint",
+      "failed",
       "fits",
       "gpu_layers",
       "host",
@@ -643,8 +649,10 @@
       "models_max",
       "port",
       "presets_path",
+      "router_reloaded",
       "secret",
       "server_binary",
+      "sized",
       "tunnel"
     ]
   },
@@ -670,7 +678,7 @@
         "sha256": "282eebabc6a2268b9c4bfad189e640b760a4baac780e0828fa1cd1187892a63a"
       },
       "runner.py": {
-        "sha256": "5d6f856817481b8de935182c77eb0e26ee95735d1bcc55872f1fc62f3cc02e11"
+        "sha256": "58c9f57d9fec695923aea5a5eed2beefc66c1eaa85e5f686d908d5cd68223127"
       }
     },
     "fingerprint_version": 1,
@@ -739,9 +747,9 @@
       "tunnel"
     ]
   },
-  "source_commit": "2ac25915bc15ab7f2f97a3453c42f25ae3961eab",
-  "source_repo": "aitpotluck-local-client",
-  "source_subject": "Merge pull request #6 from currentai-org/andrewtergis/cur-1994-error-handling-when-trying-to-run-a-model-too-big",
+  "source_commit": "318da88afa819e15191d401a3e717c43d6af2c5c",
+  "source_repo": "upstream-318da88afa819e15191d401a3e717c43d6af2c5c",
+  "source_subject": "Merge branch 'andrewtergis/gui-upstream-fixes'",
   "tunnel": {
     "argv": [
       {
@@ -755,14 +763,6 @@
       {
         "kind": "expression",
         "source": "self.tunnel_id"
-      },
-      {
-        "kind": "literal",
-        "value": "--secret"
-      },
-      {
-        "kind": "expression",
-        "source": "self.tunnel_secret"
       },
       {
         "kind": "literal",
@@ -794,12 +794,11 @@
     "error_prefix": "ERROR:",
     "files": {
       "newt_supervisor.py": {
-        "sha256": "a915327f500b8cc0925ee5d2a5dc274060bd99c68777a4e8c45a14eca93baafc"
+        "sha256": "335ce33a2155e921f831a6fc0a9cffb016f085cb9e285a5b05b5486c847846f2"
       }
     },
     "flags": [
       "--id",
-      "--secret",
       "--endpoint",
       "--health-file"
     ],
