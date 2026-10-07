@@ -1,0 +1,411 @@
+{
+  "_comment": "Every leaf of upstream's interface surface (conformance/upstream-surface.json, normalised by tools/conformance/check_coverage.py) classified as implemented / partial / not_applicable / todo. 'implemented' in this GUI means reachable from the UI, or delegated to upstream's own unchanged code. Excusing statuses carry a note. Group rules end in '*' and name the area they cover.",
+  "schema_version": 1,
+  "surface_review": {
+    "api.error_codes.*": {
+      "status": "todo",
+      "note": "Models screen not built yet; too_large_for_device needs a confirm-and-retry UI (retry_with.allow_oversized)."
+    },
+    "api.job_keys.*": {
+      "status": "todo",
+      "note": "Models screen not built yet."
+    },
+    "api.job_states.*": {
+      "status": "todo",
+      "note": "Models screen not built yet."
+    },
+    "api.list_models_keys.*": {
+      "status": "todo",
+      "note": "Models screen not built yet."
+    },
+    "cli.install_flags.--allow-apt-install": {
+      "status": "todo",
+      "note": "A source build (no prebuilt llama.cpp for this host) can need apt packages; the GUI has no consent prompt for that yet, so such hosts get upstream's printed instructions in the log."
+    },
+    "cli.install_flags.--backend": {
+      "status": "implemented",
+      "note": "Set up passes --backend auto (upstream's own detection decides)."
+    },
+    "cli.install_flags.--build-timeout": {
+      "status": "not_applicable",
+      "note": "Advanced/developer install option; GUI v1 takes upstream's default. The CLI shim upstream installs alongside remains available for these."
+    },
+    "cli.install_flags.--gpu-layers": {
+      "status": "not_applicable",
+      "note": "Advanced/developer install option; GUI v1 takes upstream's default. The CLI shim upstream installs alongside remains available for these."
+    },
+    "cli.install_flags.--install-dir": {
+      "status": "not_applicable",
+      "note": "Advanced/developer install option; GUI v1 takes upstream's default. The CLI shim upstream installs alongside remains available for these."
+    },
+    "cli.install_flags.--jobs": {
+      "status": "not_applicable",
+      "note": "Advanced/developer install option; GUI v1 takes upstream's default. The CLI shim upstream installs alongside remains available for these."
+    },
+    "cli.install_flags.--model-hf": {
+      "status": "not_applicable",
+      "note": "GUI v1 installs upstream's default model; choosing models belongs to the (todo) Models screen via pull."
+    },
+    "cli.install_flags.--model-path": {
+      "status": "not_applicable",
+      "note": "GUI v1 installs upstream's default model; choosing models belongs to the (todo) Models screen via pull."
+    },
+    "cli.install_flags.--models-max": {
+      "status": "not_applicable",
+      "note": "Advanced/developer install option; GUI v1 takes upstream's default. The CLI shim upstream installs alongside remains available for these."
+    },
+    "cli.install_flags.--no-apt-install": {
+      "status": "not_applicable",
+      "note": "The GUI never answers upstream's interactive apt prompt (stdin is closed), which upstream treats as 'no'."
+    },
+    "cli.install_flags.--no-model-pull": {
+      "status": "not_applicable",
+      "note": "GUI v1 installs upstream's default model; choosing models belongs to the (todo) Models screen via pull."
+    },
+    "cli.install_flags.--no-service": {
+      "status": "not_applicable",
+      "note": "Advanced/developer install option; GUI v1 takes upstream's default. The CLI shim upstream installs alongside remains available for these."
+    },
+    "cli.install_flags.--no-source-build": {
+      "status": "not_applicable",
+      "note": "Advanced/developer install option; GUI v1 takes upstream's default. The CLI shim upstream installs alongside remains available for these."
+    },
+    "cli.install_flags.--no-start": {
+      "status": "implemented",
+      "note": "Passed on hosts with no usable service manager; the GUI then hosts upstream's service payload itself."
+    },
+    "cli.install_flags.--server-host": {
+      "status": "not_applicable",
+      "note": "Advanced/developer install option; GUI v1 takes upstream's default. The CLI shim upstream installs alongside remains available for these."
+    },
+    "cli.install_flags.--server-port": {
+      "status": "not_applicable",
+      "note": "Advanced/developer install option; GUI v1 takes upstream's default. The CLI shim upstream installs alongside remains available for these."
+    },
+    "cli.install_flags.--system": {
+      "status": "not_applicable",
+      "note": "Advanced/developer install option; GUI v1 takes upstream's default. The CLI shim upstream installs alongside remains available for these."
+    },
+    "cli.install_flags.--tag": {
+      "status": "not_applicable",
+      "note": "Advanced/developer install option; GUI v1 takes upstream's default. The CLI shim upstream installs alongside remains available for these."
+    },
+    "cli.install_flags.--verbose": {
+      "status": "not_applicable",
+      "note": "Advanced/developer install option; GUI v1 takes upstream's default. The CLI shim upstream installs alongside remains available for these."
+    },
+    "cli.install_flags.--via": {
+      "status": "not_applicable",
+      "note": "Advanced/developer install option; GUI v1 takes upstream's default. The CLI shim upstream installs alongside remains available for these."
+    },
+    "cli.shared_flags.--install-dir": {
+      "status": "not_applicable",
+      "note": "GUI v1 uses upstream's default per-user layout only."
+    },
+    "cli.shared_flags.--system": {
+      "status": "not_applicable",
+      "note": "GUI v1 is per-user only (no elevation prompt)."
+    },
+    "cli.shared_flags.--verbose": {
+      "status": "not_applicable",
+      "note": "Log verbosity; the GUI shows upstream's INFO output."
+    },
+    "cli.subcommands.benchmark.*": {
+      "status": "todo",
+      "note": "Models screen not built yet; will use the HTTP equivalents (POST/GET/DELETE /models, POST /models/benchmark)."
+    },
+    "cli.subcommands.list.*": {
+      "status": "todo",
+      "note": "Models screen not built yet; will use the HTTP equivalents (POST/GET/DELETE /models, POST /models/benchmark)."
+    },
+    "cli.subcommands.login.flags.--credentials-file": {
+      "status": "implemented",
+      "note": "Pair button writes the clipboard/pasted JSON to a 0600 file and runs `cli login --credentials-file`."
+    },
+    "cli.subcommands.login.flags.--tunnel-endpoint": {
+      "status": "not_applicable",
+      "note": "Scripting form of login; the GUI always uses --credentials-file so the secret never goes on argv."
+    },
+    "cli.subcommands.login.flags.--tunnel-id": {
+      "status": "not_applicable",
+      "note": "Scripting form of login; the GUI always uses --credentials-file so the secret never goes on argv."
+    },
+    "cli.subcommands.login.flags.--tunnel-secret": {
+      "status": "not_applicable",
+      "note": "Scripting form of login; the GUI always uses --credentials-file so the secret never goes on argv."
+    },
+    "cli.subcommands.login.inherits_shared_flags": {
+      "status": "implemented"
+    },
+    "cli.subcommands.logout.*": {
+      "status": "implemented",
+      "note": "Unpair button runs `cli logout`."
+    },
+    "cli.subcommands.pull.*": {
+      "status": "todo",
+      "note": "Models screen not built yet; will use the HTTP equivalents (POST/GET/DELETE /models, POST /models/benchmark)."
+    },
+    "cli.subcommands.remove.*": {
+      "status": "todo",
+      "note": "Models screen not built yet; will use the HTTP equivalents (POST/GET/DELETE /models, POST /models/benchmark)."
+    },
+    "cli.subcommands.status.*": {
+      "status": "implemented",
+      "note": "Status screen reads the same GET /status the CLI's `status` prints."
+    },
+    "gui_hooks.has_detect_os": {
+      "status": "implemented",
+      "note": "gui_probe.py."
+    },
+    "gui_hooks.has_get_service_manager": {
+      "status": "implemented",
+      "note": "gui_probe.py."
+    },
+    "gui_hooks.layout_fields.*": {
+      "status": "implemented",
+      "note": "gui_probe.py reads these from upstream's Layout."
+    },
+    "gui_hooks.layout_functions.ensure_layout_dirs": {
+      "status": "not_applicable",
+      "note": "Probe is read-only; only upstream's installer creates dirs."
+    },
+    "gui_hooks.layout_functions.get_layout": {
+      "status": "implemented",
+      "note": "gui_probe.py."
+    },
+    "gui_hooks.log_format.cli.py": {
+      "status": "implemented",
+      "note": "ui/src/lib/state.ts progressCaption parses this format."
+    },
+    "gui_hooks.log_format.install.py": {
+      "status": "implemented",
+      "note": "ui/src/lib/state.ts progressCaption parses this format."
+    },
+    "gui_hooks.service_entry_flags.*": {
+      "status": "implemented",
+      "note": "runtime.rs spawn_service passes --config-dir/--log-dir exactly like the systemd unit's ExecStart."
+    },
+    "gui_hooks.service_states.*": {
+      "status": "implemented",
+      "note": "gui_probe.py reports upstream's ServiceStatus.state values."
+    },
+    "pins.dependencies": {
+      "status": "implemented",
+      "note": "Upstream is stdlib-only, so the bare bundled interpreter runs it. A non-empty list here means the GUI must start bundling packages."
+    },
+    "pins.llama_custom_builds.json.assets.*": {
+      "status": "implemented",
+      "note": "Linux custom builds (e.g. Jetson) resolve through upstream's own build_cache.py."
+    },
+    "pins.llama_custom_builds.json.tag": {
+      "status": "implemented",
+      "note": "Lockstep by construction: the GUI bundles upstream's source at the pinned commit, so upstream's own fetch code and pin files are what run."
+    },
+    "pins.llama_version.json.assets.linux-arm64-cpu": {
+      "status": "implemented",
+      "note": "Linux is the first tested GUI platform."
+    },
+    "pins.llama_version.json.assets.linux-arm64-vulkan": {
+      "status": "implemented",
+      "note": "Linux is the first tested GUI platform."
+    },
+    "pins.llama_version.json.assets.linux-x64-cpu": {
+      "status": "implemented",
+      "note": "Linux is the first tested GUI platform."
+    },
+    "pins.llama_version.json.assets.linux-x64-cuda": {
+      "status": "implemented",
+      "note": "Linux is the first tested GUI platform."
+    },
+    "pins.llama_version.json.assets.linux-x64-rocm": {
+      "status": "implemented",
+      "note": "Linux is the first tested GUI platform."
+    },
+    "pins.llama_version.json.assets.linux-x64-vulkan": {
+      "status": "implemented",
+      "note": "Linux is the first tested GUI platform."
+    },
+    "pins.llama_version.json.assets.macos-arm64-cpu": {
+      "status": "todo",
+      "note": "macOS/Windows GUI builds not targeted yet."
+    },
+    "pins.llama_version.json.assets.macos-x64-cpu": {
+      "status": "todo",
+      "note": "macOS/Windows GUI builds not targeted yet."
+    },
+    "pins.llama_version.json.assets.windows-arm64-cpu": {
+      "status": "todo",
+      "note": "macOS/Windows GUI builds not targeted yet."
+    },
+    "pins.llama_version.json.assets.windows-x64-cpu": {
+      "status": "todo",
+      "note": "macOS/Windows GUI builds not targeted yet."
+    },
+    "pins.llama_version.json.tag": {
+      "status": "implemented",
+      "note": "Lockstep by construction: the GUI bundles upstream's source at the pinned commit, so upstream's own fetch code and pin files are what run."
+    },
+    "pins.newt_version.json.assets.linux-arm64": {
+      "status": "implemented",
+      "note": "Linux is the first tested GUI platform."
+    },
+    "pins.newt_version.json.assets.linux-x64": {
+      "status": "implemented",
+      "note": "Linux is the first tested GUI platform."
+    },
+    "pins.newt_version.json.assets.macos-arm64": {
+      "status": "todo",
+      "note": "macOS/Windows GUI builds not targeted yet."
+    },
+    "pins.newt_version.json.assets.macos-x64": {
+      "status": "todo",
+      "note": "macOS/Windows GUI builds not targeted yet."
+    },
+    "pins.newt_version.json.assets.windows-x64": {
+      "status": "todo",
+      "note": "macOS/Windows GUI builds not targeted yet."
+    },
+    "pins.newt_version.json.tag": {
+      "status": "implemented",
+      "note": "Lockstep by construction: the GUI bundles upstream's source at the pinned commit, so upstream's own fetch code and pin files are what run."
+    },
+    "pins.newt_version.json.unverified_assets.*": {
+      "status": "todo",
+      "note": "Upstream's newt checksum for this platform is a placeholder, so pairing there fails until upstream fills it in. When it disappears from this list, that platform is unblocked."
+    },
+    "pins.requires_python": {
+      "status": "implemented",
+      "note": "Bundled python-build-standalone 3.12 (runtime/python_version.json); tests/test_bundled_python.py asserts it satisfies this."
+    },
+    "runtime_config_keys.*": {
+      "status": "implemented",
+      "note": "Delegated: only upstream code reads or writes runtime.json (installer, cli login/logout, service); gui_probe.py reads logged_in and llama_cpp.server_binary."
+    },
+    "schema_version": {
+      "status": "not_applicable",
+      "note": "Extractor schema version, not upstream surface."
+    },
+    "service.capabilities_keys.*": {
+      "status": "todo",
+      "note": "Diagnostics view not built yet."
+    },
+    "service.default_models_max": {
+      "status": "implemented",
+      "note": "Delegated: the GUI runs upstream's own code for this unchanged, so it matches by construction; any change still shows as drift."
+    },
+    "service.default_port": {
+      "status": "implemented",
+      "note": "service.rs SERVICE_BASE; asserted against this baseline by a Rust test."
+    },
+    "service.fingerprint_version": {
+      "status": "implemented",
+      "note": "Delegated: the GUI runs upstream's own code for this unchanged, so it matches by construction; any change still shows as drift."
+    },
+    "service.http_routes.DELETE./models": {
+      "status": "todo",
+      "note": "Models screen not built yet (allow-listed in the proxy already)."
+    },
+    "service.http_routes.GET./capabilities": {
+      "status": "todo",
+      "note": "Diagnostics view not built yet (allow-listed in the proxy already)."
+    },
+    "service.http_routes.GET./healthz": {
+      "status": "implemented"
+    },
+    "service.http_routes.GET./jobs": {
+      "status": "todo",
+      "note": "Models screen not built yet (allow-listed in the proxy already)."
+    },
+    "service.http_routes.GET./jobs/*": {
+      "status": "todo",
+      "note": "Models screen not built yet (allow-listed in the proxy already)."
+    },
+    "service.http_routes.GET./models": {
+      "status": "todo",
+      "note": "Models screen not built yet (allow-listed in the proxy already)."
+    },
+    "service.http_routes.GET./status": {
+      "status": "implemented"
+    },
+    "service.http_routes.POST./models": {
+      "status": "todo",
+      "note": "Models screen not built yet (allow-listed in the proxy already)."
+    },
+    "service.http_routes.POST./models/benchmark": {
+      "status": "todo",
+      "note": "Models screen not built yet (allow-listed in the proxy already)."
+    },
+    "service.llama_server_flags.*": {
+      "status": "implemented",
+      "note": "Delegated: the GUI runs upstream's own code for this unchanged, so it matches by construction; any change still shows as drift."
+    },
+    "service.login_gating": {
+      "status": "implemented",
+      "note": "GUI screen flow (setup -> pair -> running) mirrors upstream's logged_in gate."
+    },
+    "service.redaction_marker": {
+      "status": "implemented",
+      "note": "The GUI never displays runtime_config.tunnel.secret, and never reads the secret back."
+    },
+    "service.runtime_params_has_reason_map": {
+      "status": "implemented",
+      "note": "Delegated: the GUI runs upstream's own code for this unchanged, so it matches by construction; any change still shows as drift."
+    },
+    "service.runtime_params_preset_keys.*": {
+      "status": "implemented",
+      "note": "Delegated: the GUI runs upstream's own code for this unchanged, so it matches by construction; any change still shows as drift."
+    },
+    "service.runtime_params_router_fields.*": {
+      "status": "implemented",
+      "note": "Delegated: the GUI runs upstream's own code for this unchanged, so it matches by construction; any change still shows as drift."
+    },
+    "service.service_name": {
+      "status": "implemented",
+      "note": "gui_probe.py asks upstream's service manager for this unit name."
+    },
+    "service.status_keys.error": {
+      "status": "todo",
+      "note": "Keys of model/job API responses (the extractor gathers every _write_json in runner.py); used once the Models screen exists."
+    },
+    "service.status_keys.held_back_models": {
+      "status": "todo",
+      "note": "Models screen not built yet."
+    },
+    "service.status_keys.job": {
+      "status": "todo",
+      "note": "Keys of model/job API responses (the extractor gathers every _write_json in runner.py); used once the Models screen exists."
+    },
+    "service.status_keys.jobs": {
+      "status": "todo",
+      "note": "Keys of model/job API responses (the extractor gathers every _write_json in runner.py); used once the Models screen exists."
+    },
+    "service.status_keys.llama_server": {
+      "status": "implemented"
+    },
+    "service.status_keys.logged_in": {
+      "status": "implemented"
+    },
+    "service.status_keys.runtime_config": {
+      "status": "implemented"
+    },
+    "service.status_keys.runtime_params": {
+      "status": "todo",
+      "note": "Upstream's CLAUDE.md requires computed params be observable; the GUI should show them (with reasons) on the status screen."
+    },
+    "service.status_keys.service": {
+      "status": "not_applicable",
+      "note": "Constant service identity; nothing to show."
+    },
+    "service.status_keys.status": {
+      "status": "not_applicable",
+      "note": "Constant 'running'; the GUI uses /healthz for liveness."
+    },
+    "service.status_keys.tunnel": {
+      "status": "implemented"
+    },
+    "tunnel.*": {
+      "status": "implemented",
+      "note": "Delegated: upstream's own NewtSupervisor runs newt with upstream's pinned binary; the GUI only reads tunnel_connected from /status. Any change still shows as drift."
+    }
+  }
+}

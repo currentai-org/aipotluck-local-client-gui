@@ -1,0 +1,813 @@
+{
+  "api": {
+    "error_codes": [
+      "bad_request",
+      "cache_unreadable",
+      "delete_failed",
+      "download_failed",
+      "no_llama_install",
+      "no_presets_path",
+      "too_large_for_device",
+      "unknown_job",
+      "unknown_model"
+    ],
+    "job_keys": [
+      "created_at",
+      "error",
+      "error_code",
+      "finished_at",
+      "id",
+      "kind",
+      "model",
+      "progress",
+      "result",
+      "started_at",
+      "state"
+    ],
+    "job_states": [
+      "failed",
+      "queued",
+      "running",
+      "succeeded"
+    ],
+    "list_models_keys": [
+      "cache_type_k",
+      "cache_type_v",
+      "ctx_size",
+      "engine",
+      "held_back",
+      "id",
+      "localscore_note",
+      "models",
+      "score",
+      "sized",
+      "stale",
+      "tag"
+    ]
+  },
+  "cli": {
+    "files": {
+      "cli.py": {
+        "sha256": "a0d2b461716964ea882c6d04a9271f2fcd0470a956438bb01d84d004161434d0"
+      },
+      "install.py": {
+        "sha256": "161f0854556fd25a86f53d2aa8d59eab4442d23f2847b606a44ff000b5ef1297"
+      }
+    },
+    "install_choice_sets": {
+      "--backend": [
+        "auto",
+        "cpu",
+        "cuda",
+        "vulkan",
+        "rocm"
+      ],
+      "--via": [
+        "direct"
+      ]
+    },
+    "install_flags": {
+      "--allow-apt-install": {
+        "choices": null,
+        "default": null,
+        "help": "Consent up front to installing missing from-source-build dependencies (cmake, git, a C++ compiler, OpenSSL headers) via 'sudo apt-get install' -- skips the interactive y/N prompt. sudo still prompts for a password on its own terminal as usual; this installer never supplies one. The CUDA toolkit (nvcc) is never auto-installed regardless of this flag -- see source_build.missing_apt_packages' docstring.",
+        "names": [
+          "--allow-apt-install"
+        ],
+        "required": false,
+        "takes_value": false,
+        "type": null
+      },
+      "--backend": {
+        "choices": [
+          "auto",
+          "cpu",
+          "cuda",
+          "vulkan",
+          "rocm"
+        ],
+        "default": "auto",
+        "help": "GPU backend to use (default: auto-detect, falls back to cpu)",
+        "names": [
+          "--backend"
+        ],
+        "required": false,
+        "takes_value": true,
+        "type": null
+      },
+      "--build-timeout": {
+        "choices": null,
+        "default": null,
+        "help": null,
+        "names": [
+          "--build-timeout"
+        ],
+        "required": false,
+        "takes_value": true,
+        "type": "float"
+      },
+      "--gpu-layers": {
+        "choices": null,
+        "default": "auto",
+        "help": "llama-server -ngl value: an integer, 'auto', or 'all' (default: auto). Global -- applies to every model the router loads, not just the default one (see runner.build_llama_server_args' own docstring for why this one stays router-level).",
+        "names": [
+          "--gpu-layers"
+        ],
+        "required": false,
+        "takes_value": true,
+        "type": null
+      },
+      "--install-dir": {
+        "choices": null,
+        "default": null,
+        "help": "Override the default per-OS install root",
+        "names": [
+          "--install-dir"
+        ],
+        "required": false,
+        "takes_value": true,
+        "type": "Path"
+      },
+      "--jobs": {
+        "choices": null,
+        "default": null,
+        "help": "Parallel build jobs for a from-source build (default: auto, capped by available RAM -- a naive -j$(nproc) can OOM a low-memory board like a Jetson Orin Nano)",
+        "names": [
+          "--jobs"
+        ],
+        "required": false,
+        "takes_value": true,
+        "type": "int"
+      },
+      "--model-hf": {
+        "choices": null,
+        "default": "bartowski/Qwen2.5-0.5B-Instruct-GGUF:Q4_K_M",
+        "help": null,
+        "names": [
+          "--model-hf"
+        ],
+        "required": false,
+        "takes_value": true,
+        "type": null
+      },
+      "--model-path": {
+        "choices": null,
+        "default": null,
+        "help": "Path to a local GGUF file to pre-size as the device's default model, instead of fetching one from Hugging Face. Its containing directory is exposed to the router via --models-dir, since a loose local file isn't visible to the router's own HF-cache auto-discovery.",
+        "names": [
+          "--model-path"
+        ],
+        "required": false,
+        "takes_value": true,
+        "type": "Path"
+      },
+      "--models-max": {
+        "choices": null,
+        "default": null,
+        "help": null,
+        "names": [
+          "--models-max"
+        ],
+        "required": false,
+        "takes_value": true,
+        "type": "int"
+      },
+      "--no-apt-install": {
+        "choices": null,
+        "default": null,
+        "help": "Never offer to auto-install build dependencies, even interactively -- always just print the missing packages and the exact apt command, and stop.",
+        "names": [
+          "--no-apt-install"
+        ],
+        "required": false,
+        "takes_value": false,
+        "type": null
+      },
+      "--no-model-pull": {
+        "choices": null,
+        "default": null,
+        "help": "Skip pre-fetching/pre-sizing --model-hf at install time -- useful in CI/dry-run contexts that don't want the network/subprocess cost. The device still ends up with a working router; its first-ever model load just uses llama-server's own stock defaults until you run `pull` (or restart the service once something's cached, which backfills a preset for it -- see runner.py's own startup step).",
+        "names": [
+          "--no-model-pull"
+        ],
+        "required": false,
+        "takes_value": false,
+        "type": null
+      },
+      "--no-service": {
+        "choices": null,
+        "default": null,
+        "help": "Only fetch/extract llama.cpp; skip installing the Python service (useful for CI / dry runs on a host with no service manager)",
+        "names": [
+          "--no-service"
+        ],
+        "required": false,
+        "takes_value": false,
+        "type": null
+      },
+      "--no-source-build": {
+        "choices": null,
+        "default": null,
+        "help": "Fail instead of building llama-server from source when no prebuilt release asset is viable for this host (e.g. Jetson-class arm64+CUDA boards, or an old-glibc Linux host) -- useful in CI/dry-run contexts that want to know about the gap rather than sit through a build that can take well over an hour",
+        "names": [
+          "--no-source-build"
+        ],
+        "required": false,
+        "takes_value": false,
+        "type": null
+      },
+      "--no-start": {
+        "choices": null,
+        "default": null,
+        "help": "Install the service but do not start it",
+        "names": [
+          "--no-start"
+        ],
+        "required": false,
+        "takes_value": false,
+        "type": null
+      },
+      "--server-host": {
+        "choices": null,
+        "default": "127.0.0.1",
+        "help": "llama-server bind host",
+        "names": [
+          "--server-host"
+        ],
+        "required": false,
+        "takes_value": true,
+        "type": null
+      },
+      "--server-port": {
+        "choices": null,
+        "default": 8080,
+        "help": "llama-server bind port",
+        "names": [
+          "--server-port"
+        ],
+        "required": false,
+        "takes_value": true,
+        "type": "int"
+      },
+      "--system": {
+        "choices": null,
+        "default": null,
+        "help": "Install machine-wide (requires elevation); default is per-user, no admin",
+        "names": [
+          "--system"
+        ],
+        "required": false,
+        "takes_value": false,
+        "type": null
+      },
+      "--tag": {
+        "choices": null,
+        "default": null,
+        "help": "Override the pinned llama.cpp release tag",
+        "names": [
+          "--tag"
+        ],
+        "required": false,
+        "takes_value": true,
+        "type": null
+      },
+      "--verbose": {
+        "choices": null,
+        "default": null,
+        "help": null,
+        "names": [
+          "-v",
+          "--verbose"
+        ],
+        "required": false,
+        "takes_value": false,
+        "type": null
+      },
+      "--via": {
+        "choices": [
+          "direct"
+        ],
+        "default": "direct",
+        "help": "Install method. Only 'direct' (our own download+verify) is implemented; 'brew'/'winget' passthroughs are future work.",
+        "names": [
+          "--via"
+        ],
+        "required": false,
+        "takes_value": true,
+        "type": null
+      }
+    },
+    "shared_flags": {
+      "--install-dir": {
+        "choices": null,
+        "default": null,
+        "help": "Override the default per-OS install root -- must match what the installer used",
+        "names": [
+          "--install-dir"
+        ],
+        "required": false,
+        "takes_value": true,
+        "type": "Path"
+      },
+      "--system": {
+        "choices": null,
+        "default": null,
+        "help": "Target a machine-wide (--system) install rather than the default per-user one",
+        "names": [
+          "--system"
+        ],
+        "required": false,
+        "takes_value": false,
+        "type": null
+      },
+      "--verbose": {
+        "choices": null,
+        "default": null,
+        "help": null,
+        "names": [
+          "-v",
+          "--verbose"
+        ],
+        "required": false,
+        "takes_value": false,
+        "type": null
+      }
+    },
+    "subcommands": {
+      "benchmark": {
+        "choice_sets": {},
+        "flags": {
+          "model": {
+            "choices": null,
+            "default": null,
+            "help": "Hugging Face repo[:quant] to measure; omit to measure every cached model",
+            "names": [
+              "model"
+            ],
+            "required": false,
+            "takes_value": true,
+            "type": null
+          }
+        },
+        "help": "Re-measure how fast a cached model runs on this device, without re-downloading it",
+        "inherits_shared_flags": false
+      },
+      "list": {
+        "choice_sets": {},
+        "flags": {},
+        "help": "List models already downloaded locally (via llama-server's own --cache-list)",
+        "inherits_shared_flags": false
+      },
+      "login": {
+        "choice_sets": {},
+        "flags": {
+          "--credentials-file": {
+            "choices": null,
+            "default": null,
+            "help": "Read the pairing JSON ({tunnelId, tunnelSecret, tunnelEndpoint}) from this file instead of pasting it -- the same JSON Settings -> Local Inference's Copy button copies. Mutually exclusive with --tunnel-id/--tunnel-secret/--tunnel-endpoint.",
+            "names": [
+              "--credentials-file"
+            ],
+            "required": false,
+            "takes_value": true,
+            "type": "Path"
+          },
+          "--tunnel-endpoint": {
+            "choices": null,
+            "default": null,
+            "help": "Skip the prompt (scripting only)",
+            "names": [
+              "--tunnel-endpoint"
+            ],
+            "required": false,
+            "takes_value": true,
+            "type": null
+          },
+          "--tunnel-id": {
+            "choices": null,
+            "default": null,
+            "help": "Skip the prompt (scripting only); must be given with the other two --tunnel-* flags, and not with --credentials-file",
+            "names": [
+              "--tunnel-id"
+            ],
+            "required": false,
+            "takes_value": true,
+            "type": null
+          },
+          "--tunnel-secret": {
+            "choices": null,
+            "default": null,
+            "help": "Skip the prompt (scripting only)",
+            "names": [
+              "--tunnel-secret"
+            ],
+            "required": false,
+            "takes_value": true,
+            "type": null
+          }
+        },
+        "help": "Pair this device with a managed tunnel endpoint",
+        "inherits_shared_flags": false
+      },
+      "logout": {
+        "choice_sets": {},
+        "flags": {},
+        "help": "Unpair this device; llama-server and the tunnel stop until you log in again",
+        "inherits_shared_flags": false
+      },
+      "pull": {
+        "choice_sets": {},
+        "flags": {
+          "--force": {
+            "choices": null,
+            "default": null,
+            "help": "Keep the model even if it benchmarks too slowly to finish a conversation turn",
+            "names": [
+              "--force"
+            ],
+            "required": false,
+            "takes_value": false,
+            "type": null
+          },
+          "--skip-benchmark": {
+            "choices": null,
+            "default": null,
+            "help": "Download and size only, without measuring speed (no grade is recorded)",
+            "names": [
+              "--skip-benchmark"
+            ],
+            "required": false,
+            "takes_value": false,
+            "type": null
+          },
+          "--timeout": {
+            "choices": null,
+            "default": null,
+            "help": null,
+            "names": [
+              "--timeout"
+            ],
+            "required": false,
+            "takes_value": true,
+            "type": "float"
+          },
+          "model": {
+            "choices": null,
+            "default": null,
+            "help": "Hugging Face repo[:quant], e.g. bartowski/Qwen2.5-0.5B-Instruct-GGUF:Q4_K_M -- passed straight through to llama-server's own -hf downloader",
+            "names": [
+              "model"
+            ],
+            "required": false,
+            "takes_value": true,
+            "type": null
+          }
+        },
+        "help": "Download and size a Hugging Face model ahead of time (router mode serves any downloaded model on request, so this isn't 'activating' a single one)",
+        "inherits_shared_flags": false
+      },
+      "remove": {
+        "choice_sets": {},
+        "flags": {
+          "--yes": {
+            "choices": null,
+            "default": null,
+            "help": "Skip the confirmation prompt (required when there's no terminal to prompt on)",
+            "names": [
+              "--yes"
+            ],
+            "required": false,
+            "takes_value": false,
+            "type": null
+          },
+          "model": {
+            "choices": null,
+            "default": null,
+            "help": "Hugging Face repo[:quant] exactly as `list` shows it",
+            "names": [
+              "model"
+            ],
+            "required": false,
+            "takes_value": true,
+            "type": null
+          }
+        },
+        "help": "Delete a downloaded model and everything this client remembers about it",
+        "inherits_shared_flags": false
+      },
+      "status": {
+        "choice_sets": {},
+        "flags": {},
+        "help": "Query the running service's login/tunnel/llama-server state",
+        "inherits_shared_flags": false
+      }
+    }
+  },
+  "gui_hooks": {
+    "has_detect_os": true,
+    "has_get_service_manager": true,
+    "layout_fields": [
+      "config_dir",
+      "install_root",
+      "log_dir",
+      "state_dir"
+    ],
+    "layout_functions": [
+      "ensure_layout_dirs",
+      "get_layout"
+    ],
+    "log_format.cli.py": "[%(levelname)s] %(name)s: %(message)s",
+    "log_format.install.py": "[%(levelname)s] %(name)s: %(message)s",
+    "service_entry_flags": [
+      "--config-dir",
+      "--host",
+      "--log-dir",
+      "--port"
+    ],
+    "service_states": [
+      "not_installed",
+      "running",
+      "stopped",
+      "unknown"
+    ]
+  },
+  "parse_errors": {},
+  "pins": {
+    "dependencies": "[]",
+    "llama_custom_builds.json": {
+      "assets": [
+        "linux-arm64-cuda-sm87"
+      ],
+      "tag": "custom-builds",
+      "unverified_assets": []
+    },
+    "llama_version.json": {
+      "assets": [
+        "linux-arm64-cpu",
+        "linux-arm64-vulkan",
+        "linux-x64-cpu",
+        "linux-x64-cuda",
+        "linux-x64-rocm",
+        "linux-x64-vulkan",
+        "macos-arm64-cpu",
+        "macos-x64-cpu",
+        "windows-arm64-cpu",
+        "windows-x64-cpu"
+      ],
+      "tag": "b10989",
+      "unverified_assets": []
+    },
+    "newt_version.json": {
+      "assets": [
+        "linux-arm64",
+        "linux-x64",
+        "macos-arm64",
+        "macos-x64",
+        "windows-x64"
+      ],
+      "tag": "1.18.1",
+      "unverified_assets": [
+        "macos-arm64",
+        "macos-x64",
+        "windows-x64"
+      ]
+    },
+    "requires_python": ">=3.9"
+  },
+  "runtime_config_keys": {
+    "cli.py": [
+      "avg_gen_tps",
+      "avg_prompt_tps",
+      "avg_ttft_ms",
+      "band",
+      "cache_type_k",
+      "cache_type_v",
+      "confidence",
+      "ctx_size",
+      "detail",
+      "file",
+      "fits",
+      "held_back",
+      "id",
+      "llama_cpp",
+      "localscore",
+      "logged_in",
+      "measured",
+      "measurement_skipped",
+      "model",
+      "models",
+      "observed_spread",
+      "parallel",
+      "quarantine_reason",
+      "reason",
+      "rejected",
+      "rejection",
+      "removal_note",
+      "results",
+      "score",
+      "screen",
+      "sized",
+      "sizing",
+      "sizing_error",
+      "stale",
+      "tag",
+      "tunnel",
+      "tunnelEndpoint",
+      "tunnelId",
+      "tunnelSecret",
+      "warning"
+    ],
+    "install.py": [
+      "asset_key",
+      "file",
+      "host",
+      "llama_cpp",
+      "logged_in",
+      "port",
+      "server_binary",
+      "tag",
+      "tunnel"
+    ],
+    "runner.py": [
+      "binary",
+      "detail",
+      "endpoint",
+      "fits",
+      "gpu_layers",
+      "host",
+      "id",
+      "llama_cpp",
+      "logged_in",
+      "models_dir",
+      "models_max",
+      "port",
+      "presets_path",
+      "secret",
+      "server_binary",
+      "tunnel"
+    ]
+  },
+  "schema_version": 1,
+  "service": {
+    "capabilities_keys": [
+      "arch",
+      "build_tools",
+      "cpu",
+      "current_install",
+      "disk",
+      "fingerprint_version",
+      "gpu",
+      "install_strategy",
+      "libc",
+      "os",
+      "service"
+    ],
+    "default_models_max": 1,
+    "default_port": 8069,
+    "files": {
+      "diagnostics.py": {
+        "sha256": "282eebabc6a2268b9c4bfad189e640b760a4baac780e0828fa1cd1187892a63a"
+      },
+      "runner.py": {
+        "sha256": "5d6f856817481b8de935182c77eb0e26ee95735d1bcc55872f1fc62f3cc02e11"
+      }
+    },
+    "fingerprint_version": 1,
+    "http_paths": [
+      "/capabilities",
+      "/healthz",
+      "/jobs",
+      "/jobs/*",
+      "/models",
+      "/models/benchmark",
+      "/status"
+    ],
+    "http_routes": {
+      "DELETE": [
+        "/models"
+      ],
+      "GET": [
+        "/capabilities",
+        "/healthz",
+        "/jobs",
+        "/jobs/*",
+        "/models",
+        "/status"
+      ],
+      "POST": [
+        "/models",
+        "/models/benchmark"
+      ]
+    },
+    "llama_server_flags": [
+      "--gpu-layers",
+      "--host",
+      "--models-dir",
+      "--models-max",
+      "--models-preset",
+      "--port"
+    ],
+    "login_gating": true,
+    "redaction_marker": "<redacted>",
+    "runtime_params_has_reason_map": true,
+    "runtime_params_preset_keys": {
+      "cache-type-k": "cache_type_k",
+      "cache-type-v": "cache_type_v",
+      "ctx-size": "ctx_size",
+      "parallel": "parallel"
+    },
+    "runtime_params_router_fields": [
+      "host",
+      "port",
+      "gpu_layers",
+      "models_dir",
+      "models_max"
+    ],
+    "service_name": "aipotluck",
+    "status_keys": [
+      "error",
+      "held_back_models",
+      "job",
+      "jobs",
+      "llama_server",
+      "logged_in",
+      "runtime_config",
+      "runtime_params",
+      "service",
+      "status",
+      "tunnel"
+    ]
+  },
+  "source_commit": "2ac25915bc15ab7f2f97a3453c42f25ae3961eab",
+  "source_repo": "aitpotluck-local-client",
+  "source_subject": "Merge pull request #6 from currentai-org/andrewtergis/cur-1994-error-handling-when-trying-to-run-a-model-too-big",
+  "tunnel": {
+    "argv": [
+      {
+        "kind": "expression",
+        "source": "str(self.newt_binary)"
+      },
+      {
+        "kind": "literal",
+        "value": "--id"
+      },
+      {
+        "kind": "expression",
+        "source": "self.tunnel_id"
+      },
+      {
+        "kind": "literal",
+        "value": "--secret"
+      },
+      {
+        "kind": "expression",
+        "source": "self.tunnel_secret"
+      },
+      {
+        "kind": "literal",
+        "value": "--endpoint"
+      },
+      {
+        "kind": "expression",
+        "source": "self.tunnel_endpoint"
+      },
+      {
+        "kind": "literal",
+        "value": "--health-file"
+      },
+      {
+        "kind": "expression",
+        "source": "str(health_file)"
+      }
+    ],
+    "backoff_schedule": [
+      1,
+      2,
+      5,
+      10,
+      20,
+      30,
+      60
+    ],
+    "connected_signal": "established successfully",
+    "error_prefix": "ERROR:",
+    "files": {
+      "newt_supervisor.py": {
+        "sha256": "a915327f500b8cc0925ee5d2a5dc274060bd99c68777a4e8c45a14eca93baafc"
+      }
+    },
+    "flags": [
+      "--id",
+      "--secret",
+      "--endpoint",
+      "--health-file"
+    ],
+    "health_filename": "newt-health.ok",
+    "health_ok_content": "ok",
+    "log_tail_bytes": 16384,
+    "poll_interval_seconds": 5,
+    "ports_health_file_fd": false,
+    "stable_uptime_reset_seconds": 120,
+    "uses_health_file_flag": true
+  }
+}
