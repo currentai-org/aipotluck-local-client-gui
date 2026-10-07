@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
 """End-to-end smoke test: drive the REAL app through the whole user flow on a throwaway HOME.
 
-    tools/e2e-smoke.py [--app PATH] [--keep]
+    tools/e2e-smoke.py [--app PATH] [--keep] [--visible] [--default-model]
 
 What it does, through the actual window (WebDriver via tauri-driver -> WebKitWebDriver):
-  1. fresh HOME -> app unpacks its runtime -> "Set up this computer"
-  2. click Set up -> upstream's real installer runs (real llama.cpp + model download)
-  3. pair screen -> "Paste instead" -> type a pairing JSON -> Pair -> upstream's real `cli login`
+  1. fresh HOME -> app unpacks its runtime -> "Set up this computer", listing client, llama.cpp,
+     newt and the starter model, each with a size, and a total
+  2. Customize -> a malformed model id is refused and the page stays open -> a small real model is
+     saved -> the list names it and re-sizes it (skipped with --default-model)
+  3. click Set up -> upstream's real installer runs (real llama.cpp + model download) and pulls
+     exactly the model the list showed
+  4. pair screen -> "Paste instead" -> type a pairing JSON -> Pair -> upstream's real `cli login`
      (real newt download, checksum-verified against upstream's pin)
-  4. running screen: service + inference server healthy; the tunnel row must report the fake
+  5. running screen: service + inference server healthy; the tunnel row must report the fake
      endpoint as NOT connected (proves the status screen reads tunnel_connected, not `running`)
-  5. Unpair -> back to the pair screen, runtime.json logged out
+  6. Unpair -> back to the pair screen, runtime.json logged out
 Screenshots of every step go to build/e2e/.
 
-Needs: Xvfb (or a real display), tauri-driver (`cargo install tauri-driver --locked`),
+The window lives on a private Xvfb display, never the desktop, even when DISPLAY is set (a
+Wayland session sets it for XWayland); --visible uses $DISPLAY instead, to watch it run.
+
+Needs: Xvfb, tauri-driver (`cargo install tauri-driver --locked`),
 WebKitWebDriver (apt: webkit2gtk-driver), and a debug or release build of the app.
 The pairing used is fake (endpoint https://pangolin.invalid) -- it never reaches aipotluck.org.
 Exit 0 = every step passed.
@@ -37,6 +44,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "build" / "e2e"
+# Small (~105 MB), so the customized path is also the fast one. Not upstream's default model, so a
+# Set up that ignored Customize would pull the wrong one and fail the check below.
+CUSTOM_MODEL = "bartowski/SmolLM2-135M-Instruct-GGUF:Q4_K_M"
 FAKE_PAIRING = {"tunnelId": "e2e-smoke", "tunnelSecret": "e2e-not-a-secret", "tunnelEndpoint": "https://pangolin.invalid"}
 
 
@@ -81,16 +91,19 @@ class WD:
         if not ok:
             raise AssertionError(f"no enabled button labelled {label!r}; page:\n{self.text()}")
 
-    def type_into(self, css: str, value: str):
+    def type_into(self, css: str, value: str, clear: bool = False):
         el = self._req("POST", self.s("/element"), {"using": "css selector", "value": css})
         eid = next(iter(el.values()))
+        if clear:
+            self._req("POST", self.s(f"/element/{eid}/clear"), {})
         self._req("POST", self.s(f"/element/{eid}/value"), {"text": value})
 
     def shot(self, name: str):
         png = self._req("GET", self.s("/screenshot"))
         (OUT / f"{name}.png").write_bytes(base64.b64decode(png))
 
-    def wait_for(self, needle: str, timeout: float, step: str):
+    def wait_for(self, needle: str, timeout: float, step: str, absent: str | None = None):
+        """Wait until the page shows `needle` (and, if given, no longer shows `absent`)."""
         end = time.time() + timeout
         last = ""
         while time.time() < end:
@@ -98,9 +111,9 @@ class WD:
                 last = self.text()
             except RuntimeError:
                 pass
-            if needle.lower() in last.lower():
+            if needle.lower() in last.lower() and not (absent and absent.lower() in last.lower()):
                 return last
-            time.sleep(2)
+            time.sleep(1)
         self.shot(f"FAIL-{step}")
         raise AssertionError(f"[{step}] timed out waiting for {needle!r}; page was:\n{last}")
 
@@ -116,6 +129,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--app", default=str(ROOT / "src-tauri" / "target" / "debug" / "aipotluck-local-client-gui"))
     ap.add_argument("--keep", action="store_true", help="keep the throwaway HOME for inspection")
+    ap.add_argument("--visible", action="store_true", help="use $DISPLAY instead of a private Xvfb")
+    ap.add_argument("--default-model", action="store_true", help="skip Customize; install upstream's default model")
     args = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
 
@@ -127,12 +142,25 @@ def main() -> int:
     home = Path(tempfile.mkdtemp(prefix="aipotluck-e2e-home-"))
     env = {k: v for k, v in os.environ.items() if not k.startswith(("XDG_", "DBUS_"))}
     env["HOME"] = str(home)
+    env.pop("WAYLAND_DISPLAY", None)  # the app must come up on the X display chosen below
     procs = []
-    if not env.get("DISPLAY"):
-        disp = ":97"
-        procs.append(subprocess.Popen(["Xvfb", disp, "-screen", "0", "1280x900x24", "-nolisten", "tcp"]))
-        env["DISPLAY"] = disp
-        time.sleep(1)
+    if args.visible:
+        if not env.get("DISPLAY"):
+            print("--visible needs DISPLAY", file=sys.stderr)
+            return 2
+    else:
+        # -displayfd: Xvfb picks a free display number itself and writes it to us.
+        rfd, wfd = os.pipe()
+        procs.append(subprocess.Popen(
+            ["Xvfb", "-displayfd", str(wfd), "-screen", "0", "1280x900x24", "-nolisten", "tcp"],
+            pass_fds=(wfd,), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+        os.close(wfd)
+        with os.fdopen(rfd) as r:
+            number = r.readline().strip()
+        if not number:
+            print("Xvfb did not start", file=sys.stderr)
+            return 2
+        env["DISPLAY"] = f":{number}"
     port = free_port()
     procs.append(subprocess.Popen([driver, "--port", str(port), "--native-port", str(free_port())], env=env,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
@@ -141,41 +169,77 @@ def main() -> int:
     steps = []
     try:
         wd.start(args.app)
-        wd.wait_for("Set up this computer", 120, "1-setup-screen"); wd.shot("1-setup"); steps.append("setup screen shown on a fresh machine")
+        wd.wait_for("Set up this computer", 120, "1-setup-screen")
+        page = wd.wait_for("Total", 120, "1-plan", absent="Checking")
+        wd.shot("1-setup")
+        for part in ("Client", "llama.cpp", "newt", "Model (starter)"):
+            assert part in page, f"plan does not list {part!r}:\n{page}"
+        lines = page.splitlines()
+        unsized = [lines[i - 1] for i, line in enumerate(lines) if line.strip() == "—" and i]
+        assert not unsized, (
+            f"no size for {unsized} -- the app is showing it as unknown, which can also mean GitHub or "
+            f"Hugging Face failed the lookup just now (see build/e2e/1-setup.png):\n{page}")
+        steps.append("setup screen lists client, llama.cpp, newt and the starter model, each sized")
+
+        model = None
+        if not args.default_model:
+            wd.click_button("Customize")
+            wd.wait_for("Save changes", 30, "2-settings")
+            wd.type_into("#model-hf", "not a model")
+            wd.click_button("Save changes")
+            page = wd.wait_for("isn’t a Hugging Face model id", 10, "2-invalid")
+            assert "Save changes" in page or "SAVE CHANGES" in page, "settings page closed on a bad id"
+            wd.shot("2-invalid")
+            wd.type_into("#model-hf", CUSTOM_MODEL, clear=True)
+            wd.click_button("Save changes")
+            page = wd.wait_for(CUSTOM_MODEL, 30, "2-custom", absent="Checking")
+            wd.shot("2-custom")
+            assert "Model (starter)" not in page, f"customized model still labelled as the starter:\n{page}"
+            row = page.split(CUSTOM_MODEL)[0].splitlines()[-1]
+            assert "~" in row and "MB" in row.upper(), f"customized model was not sized:\n{page}"
+            model = CUSTOM_MODEL
+            steps.append(f"Customize refused a malformed id, then sized {CUSTOM_MODEL} ({row.split()[-2]} MB)")
 
         wd.click_button("Set up")
         t0 = time.time()
-        wd.wait_for("Pair with AI Potluck", 1800, "2-install"); wd.shot("2-pair")
+        wd.wait_for("Pair with AI Potluck", 1800, "3-install"); wd.shot("3-pair")
         steps.append(f"upstream installer finished via the GUI in {time.time() - t0:.0f}s")
         runtime = json.loads((home / ".config" / "aipotluck" / "runtime.json").read_text())
         assert Path(runtime["llama_cpp"]["server_binary"]).exists(), "installer did not leave a llama-server"
         assert runtime["logged_in"] is False
+        if model:
+            presets = (home / ".config" / "aipotluck" / "llama_presets.ini").read_text()
+            assert f"[{model}]" in presets, f"installer did not size the customized model:\n{presets}"
+            cached = sorted(p.name for p in (home / ".cache" / "huggingface" / "hub").glob("models--*"))
+            repo = model.split(":")[0].replace("/", "--")
+            assert cached == [f"models--{repo}"], f"installer pulled {cached}, not only {model}"
+            steps.append(f"upstream pulled and sized exactly the customized model, and nothing else")
 
         wd.click_button("Paste instead")
         wd.type_into("textarea.paste", json.dumps(FAKE_PAIRING))
-        wd.shot("3-pasted")
+        wd.shot("4-pasted")
         page = wd.text()
         assert FAKE_PAIRING["tunnelSecret"] not in page, "secret visible on screen"
         wd.click_button("Pair")
-        wd.wait_for("Sharing with AI Potluck", 300, "3-pair")
+        wd.wait_for("Sharing with AI Potluck", 300, "4-pair")
         runtime = json.loads((home / ".config" / "aipotluck" / "runtime.json").read_text())
         assert runtime["logged_in"] is True and runtime["tunnel"]["id"] == FAKE_PAIRING["tunnelId"]
         assert not list((home / ".local" / "share" / "aipotluck" / "gui-runtime").glob(".pairing-*.json")), \
             "pairing temp file was not cleaned up"
         steps.append("paired via upstream `cli login`; temp credentials file removed")
 
-        page = wd.wait_for("Inference server", 60, "4-status")
+        page = wd.wait_for("Inference server", 60, "5-status")
         end = time.time() + 240
         while time.time() < end and ("Ready" not in page or "Can’t reach" not in page and "Can't reach" not in page):
             time.sleep(3); page = wd.text()
-        wd.shot("4-running")
+        wd.shot("5-running")
         assert "Ready" in page, f"inference server never reported Ready:\n{page}"
         assert "reach AI Potluck" in page, f"fake tunnel was not reported as unreachable:\n{page}"
         assert FAKE_PAIRING["tunnelSecret"] not in page
         steps.append("status: inference server Ready, fake tunnel honestly reported as not connected")
 
         wd.click_button("Unpair")
-        wd.wait_for("Pair with AI Potluck", 120, "5-unpair"); wd.shot("5-unpaired")
+        wd.wait_for("Pair with AI Potluck", 120, "6-unpair"); wd.shot("6-unpaired")
         runtime = json.loads((home / ".config" / "aipotluck" / "runtime.json").read_text())
         assert runtime["logged_in"] is False and "tunnel" not in runtime
         steps.append("unpaired via upstream `cli logout`")
