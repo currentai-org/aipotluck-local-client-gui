@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import surface from '../../../conformance/upstream-surface.json';
 import {
 	MEASURE_BUDGET_SECONDS,
+	SCORE_BANDS,
+	localScoreExplainer,
 	activeJob,
 	canForceAdd,
 	elapsedSeconds,
@@ -51,6 +53,20 @@ describe('the promise of "up to 3 minutes"', () => {
 	});
 });
 
+describe('the LocalScore explanation', () => {
+	it('uses upstream’s own band thresholds, as recorded in the conformance baseline', () => {
+		const b = surface.gui_hooks.localscore_bands;
+		expect(SCORE_BANDS).toEqual({ fair: b.poor, good: b.good, excellent: b.excellent });
+	});
+
+	it('says, in plain words, that higher is better and where each band starts', () => {
+		const t = localScoreExplainer();
+		expect(t).toContain('Higher is better');
+		expect(t).toContain('under 100 is poor');
+		expect(t).toContain('over 1,000 is excellent');
+	});
+});
+
 describe('modelRow', () => {
 	it('splits the id into repo, owner and quant', () => {
 		expect(splitModelId('bartowski/Qwen2.5-0.5B-Instruct-GGUF:Q4_K_M')).toEqual({
@@ -63,8 +79,8 @@ describe('modelRow', () => {
 
 	it('a measured model shows its LocalScore, band and speed, like the CLI list', () => {
 		const r = modelRow(entry({ score: { localscore: 1312.4, band: 'excellent', avg_gen_tps: 41.234 } }));
-		expect(r.score).toBe('1,312');
-		expect(r.facts).toEqual(['excellent', '41.2 tok/s', '32K context']);
+		expect(r.score).toBe('1,312 (excellent)');
+		expect(r.facts).toEqual(['41.2 tok/s', '32K context']);
 		expect(r.notes).toEqual([]);
 	});
 

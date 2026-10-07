@@ -16,7 +16,7 @@
     },
     "api.list_models_keys.*": {
       "status": "implemented",
-      "note": "Models screen list: id, score (localscore, band, avg_gen_tps, confidence), stale, sized, held_back.quarantine_reason, ctx_size, engine.localscore_note."
+      "note": "Models screen list: id, score (localscore, band, avg_gen_tps, confidence), stale, sized, held_back.quarantine_reason, ctx_size; engine.localscore_note is replaced by a plain-words explanation of the score."
     },
     "cli.install_flags.--allow-apt-install": {
       "status": "todo",
@@ -172,6 +172,10 @@
     "gui_hooks.layout_functions.get_layout": {
       "status": "implemented",
       "note": "gui_probe.py."
+    },
+    "gui_hooks.localscore_bands.*": {
+      "status": "implemented",
+      "note": "The models screen explains LocalScore with these band floors (ui/src/lib/models.ts SCORE_BANDS, held to this baseline by models.test.ts)."
     },
     "gui_hooks.log_format.cli.py": {
       "status": "implemented",

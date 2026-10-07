@@ -663,6 +663,11 @@ def extract_gui_hooks(repo: pathlib.Path) -> dict[str, Any]:
     if perf is not None:
         # How long one model's benchmark may take; the models screen quotes it to the user.
         out["measure_budget_seconds"] = _module_constants(perf).get("PROBE_BUDGET_SECONDS")
+    ls = _parse(repo / "aipotluck" / "installer" / "model_localscore.py")
+    if ls is not None:
+        # The LocalScore band floors; the models screen explains the number in these terms.
+        consts = _module_constants(ls)
+        out["localscore_bands"] = {k: consts.get(f"BAND_{k.upper()}") for k in ("poor", "good", "excellent")}
     for module in ("install.py", "cli.py"):
         tree = _parse(repo / "aipotluck" / "installer" / module)
         if tree is None:
