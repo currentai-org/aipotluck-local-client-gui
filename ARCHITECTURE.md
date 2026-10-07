@@ -95,11 +95,10 @@ the one we test (`tools/bundled-python.sh`) is the one users run.
   Add and Benchmark are upstream jobs. The UI follows the newest unfinished one in `GET /jobs`,
   whoever started it (this window, the CLI, aipotluck.org), showing upstream's latest progress
   step in words, an elapsed clock and how long it may take: the download size from
-  `model_preflight` and upstream's per-model measuring budget (`PROBE_BUDGET_SECONDS`, held to the
-  conformance baseline by a UI test). Upstream runs one job at a time, so the controls wait too.
-  There is no byte-level download progress: upstream's job reports steps, not bytes, and
-  guessing from the cache directory would re-implement llama.cpp's cache resolution. Byte progress
-  in the job is an upstream proposal.
+  `model_preflight` and, for Benchmark, upstream's per-model measuring budget
+  (`PROBE_BUDGET_SECONDS`, held to the conformance baseline by a UI test). While a pull downloads,
+  the job's `download` byte count drives a real progress bar. A pull downloads and sizes only;
+  measuring is Benchmark's. Upstream runs one job at a time, so the controls wait too.
 - **Unpair** runs `cli logout`.
 
 ### Hosts with no service manager
@@ -126,10 +125,6 @@ The UI says plainly that the server only runs while the window is open.
 ## Known gaps (v0.1)
 
 - A diagnostics view is not built yet (`todo` in `conformance/coverage.json`).
-- Removing a model fails today for every model that has been sized (all pulled ones): upstream
-  deletes through llama-server's router, which refuses preset-defined models ("not removable (not
-  from cache)"). The CLI's `remove` fails the same way. The UI shows upstream's error; the e2e
-  test reports it as a note. See docs/research/2026-10-07-upstream-proposals.md.
 - Source-build hosts (no prebuilt llama.cpp for the machine) may need apt packages. Upstream only
   installs them with consent through an interactive prompt the GUI can't answer, so the log shows
   upstream's instructions instead.

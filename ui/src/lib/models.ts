@@ -48,6 +48,8 @@ export type Job = {
 	started_at: string | null;
 	finished_at: string | null;
 	progress: { at: string; message: string }[];
+	/** A pull's latest byte count while it downloads; total_bytes is null until llama.cpp knows it. */
+	download?: { received_bytes: number; total_bytes: number | null; updated_at: string } | null;
 	result: Record<string, unknown> | null;
 	error: string | null;
 	error_code: string | null;
@@ -177,8 +179,9 @@ function minutes(seconds: number): string {
 export function jobHint(job: Job, opts: { downloadBytes?: number | null; modelCount?: number } = {}): string {
 	const measure = minutes(MEASURE_BUDGET_SECONDS);
 	if (job.kind === 'pull') {
+		// A pull downloads and sizes; measuring is Benchmark's job (upstream 928b822).
 		const size = opts.downloadBytes ? `~${formatBytes(opts.downloadBytes)} download` : 'Download';
-		return `${size}, then up to ${measure} to measure it. A large model can take much longer to download.`;
+		return `${size}, then a moment to size it for this computer. A large model can take a while to download.`;
 	}
 	if (job.kind === 'benchmark') {
 		const n = job.model ? 1 : (opts.modelCount ?? 0);
@@ -187,6 +190,20 @@ export function jobHint(job: Job, opts: { downloadBytes?: number | null; modelCo
 			: `Up to ${measure}.`;
 	}
 	return '';
+}
+
+/**
+ * How far a pull's download has got, from upstream's byte count: `fraction` (0-1) once the total
+ * is known, and words for beside the bar. Null when nothing is downloading, including after the
+ * download, when the job has moved on to sizing.
+ */
+export function downloadProgress(job: Job, expectedBytes?: number | null): { fraction: number | null; text: string } | null {
+	const d = job.download;
+	if (job.kind !== 'pull' || !d || !jobStage(job).startsWith('Downloading')) return null;
+	const total = d.total_bytes ?? expectedBytes ?? null;
+	if (!total) return { fraction: null, text: `${formatBytes(d.received_bytes)} so far` };
+	const fraction = Math.min(1, d.received_bytes / total);
+	return { fraction, text: `${formatBytes(d.received_bytes)} of ${formatBytes(total)} (${Math.floor(fraction * 100)}%)` };
 }
 
 /** Seconds since the job started (or was queued), from upstream's own timestamps. */
@@ -213,7 +230,10 @@ export function jobOutcome(job: Job): Note {
 		}
 		const score = (r.score as Score | null | undefined)?.localscore;
 		return {
-			text: `Added ${name}${typeof score === 'number' ? `, LocalScore ${Math.round(score).toLocaleString('en-US')}` : ''}.`
+			text:
+				typeof score === 'number'
+					? `Added ${name}, LocalScore ${Math.round(score).toLocaleString('en-US')}.`
+					: `Added ${name}. Run a benchmark to see how fast it is here.`
 		};
 	}
 	if (job.kind === 'benchmark') {

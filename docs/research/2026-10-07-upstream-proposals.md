@@ -1,5 +1,9 @@
 # Upstream proposals from building the models screen (2026-10-07)
 
+**Status (upstream 318da88, same day):** 1 fixed (dcfa88d, delete through a scratch router),
+3 done (8e31548, byte progress in the pull job), 4 fixed (f4560eb, the secret goes to newt
+through its environment). 2 (the misleading `delete_failed` wording) is still open.
+
 Found while building the GUI's models screen against `currentai-org/aitpotluck-local-client` at
 `2ac2591` (also `origin/main` on that date). Per this repo's rules the fixes belong upstream; none
 of these has been filed. Each was reproduced on a throwaway install, not a real one.
