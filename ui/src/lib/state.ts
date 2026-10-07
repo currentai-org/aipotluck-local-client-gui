@@ -143,10 +143,12 @@ export type PlanItem = {
 const BACKEND_NAMES: Record<string, string> = { cpu: 'CPU', cuda: 'CUDA', vulkan: 'Vulkan', rocm: 'ROCm' };
 
 /**
- * One line per thing Set up puts on this computer, in the order it happens. `modelPending` is true
- * while a changed model is being sized, so its row reads "Checking…" instead of the old figure.
+ * One line per thing Set up puts on this computer, in the order it happens. `pendingModel` is the
+ * model just chosen in Customize while it is being sized ('' = back to the default): its row names
+ * that model and reads "Checking…", never the previous model's name or size.
  */
-export function planItems(plan: InstallPlan, modelPending = false): PlanItem[] {
+export function planItems(plan: InstallPlan, pendingModel: string | null = null): PlanItem[] {
+	const modelPending = pendingModel !== null;
 	const llama = plan.llama_cpp;
 	const backend = llama.asset_key ? llama.asset_key.split('-').slice(-1)[0] : plan.host.backend;
 	const llamaItem: PlanItem = {
@@ -172,9 +174,10 @@ export function planItems(plan: InstallPlan, modelPending = false): PlanItem[] {
 		newtItem.note = plan.newt.error;
 		newtItem.warn = true;
 	}
+	const modelId = modelPending ? pendingModel || plan.model.default_id : plan.model.id;
 	const modelItem: PlanItem = {
-		name: plan.model.is_default ? 'Model (starter)' : 'Model',
-		detail: plan.model.id,
+		name: modelId === plan.model.default_id ? 'Model (starter)' : 'Model',
+		detail: modelId,
 		bytes: modelPending ? null : plan.model.bytes,
 		pending: modelPending
 	};

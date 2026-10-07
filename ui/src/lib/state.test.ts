@@ -132,11 +132,21 @@ describe('planItems', () => {
 		expect(planTotal(planItems(p)).partial).toBe(true);
 	});
 
-	it('a model being re-sized shows as pending, not with the previous model’s size', () => {
-		const model = planItems(plan(), true)[3];
+	it('a model being re-sized shows as pending under its own name, not the previous model’s', () => {
+		const model = planItems(plan(), 'unsloth/Qwen3-4B-GGUF')[3];
 		expect(model.pending).toBe(true);
+		expect(model.detail).toBe('unsloth/Qwen3-4B-GGUF');
+		expect(model.name).toBe('Model');
 		expect(model.bytes).toBeNull();
 		expect(model.warn).toBeFalsy();
+	});
+
+	it('going back to the default while re-sizing names the starter model', () => {
+		const p = plan();
+		p.model = { ...p.model, id: 'unsloth/Qwen3-4B-GGUF', is_default: false, bytes: 2_497_281_312 };
+		const model = planItems(p, '')[3];
+		expect(model.detail).toBe(p.model.default_id);
+		expect(model.name).toBe('Model (starter)');
 	});
 
 	it('a source-build host never claims a download size for llama.cpp', () => {

@@ -38,7 +38,7 @@
 	const busy = $derived(app && app.ready ? app.busy : null);
 	const rows = $derived(app && app.ready ? statusRows(app, status) : []);
 	const planPending = $derived(planFor !== modelHf);
-	const items = $derived(plan ? planItems(plan, planPending) : []);
+	const items = $derived(plan ? planItems(plan, planPending ? modelHf : null) : []);
 	const total = $derived(planTotal(items));
 
 	async function loadPlan() {
