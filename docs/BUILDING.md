@@ -48,9 +48,17 @@ Check what a build needs: `objdump -T src-tauri/target/release/aipotluck-local-c
 
 ```bash
 tools/check.sh                                   # merge gate (unit + contract + conformance)
-DISPLAY=:99 tools/e2e-smoke.py --app src-tauri/target/release/aipotluck-local-client-gui
+tools/e2e-smoke.py --app src-tauri/target/release/aipotluck-local-client-gui
 ```
 
-`e2e-smoke.py` needs `cargo install tauri-driver --locked` and an X display (`Xvfb :99 &`). It
-drives the real window through set up → pair (with a fake, unreachable pairing) → status →
-unpair on a throwaway HOME, and fails if any process the app started outlives it.
+`e2e-smoke.py` needs `cargo install tauri-driver --locked` and, from apt, `webkit2gtk-driver`
+(its version must match the installed `libwebkit2gtk-4.1-0`) and `xvfb`. It starts its own Xvfb
+display, so the window never appears on the desktop, even in a Wayland session; pass `--visible`
+to watch it on `$DISPLAY` instead. It drives the real window on a throwaway HOME with no systemd
+session:
+- the install plan, then Customize (a bad model id refused, a small real model sized);
+- set up, checking upstream pulled exactly that model;
+- pair, with a fake, unreachable pairing; status; unpair.
+
+It fails if any process the app started outlives it. `--default-model` skips Customize and
+installs upstream's default model instead.
