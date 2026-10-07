@@ -3,7 +3,7 @@
 
 Run with the bundled interpreter from inside the unpacked upstream checkout:
 
-    python gui_plan.py [--model-hf REPO[:QUANT]]
+    python gui_plan.py [--model-hf REPO[:QUANT]] [--model-only]
 
 Prints one JSON object on stdout. It never writes anything and downloads nothing. Every decision
 is upstream's own:
@@ -118,7 +118,11 @@ def plan_model(model_hf: str | None) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-hf", default=None)
+    parser.add_argument("--model-only", action="store_true", help="size just the model (for Add)")
     args = parser.parse_args()
+    if args.model_only:
+        print(json.dumps({"model": plan_model(args.model_hf)}))
+        return 0
     profile = detect_host_profile("auto")
     print(
         json.dumps(

@@ -3,20 +3,20 @@
   "schema_version": 1,
   "surface_review": {
     "api.error_codes.*": {
-      "status": "todo",
-      "note": "Models screen not built yet; too_large_for_device needs a confirm-and-retry UI (retry_with.allow_oversized)."
+      "status": "implemented",
+      "note": "Models screen shows upstream's message for every code; too_large_for_device offers 'Download anyway' (retry_with.allow_oversized)."
     },
     "api.job_keys.*": {
-      "status": "todo",
-      "note": "Models screen not built yet."
+      "status": "implemented",
+      "note": "Models screen progress panel reads kind, model, state, started_at/created_at, progress[].message, result and error."
     },
     "api.job_states.*": {
-      "status": "todo",
-      "note": "Models screen not built yet."
+      "status": "implemented",
+      "note": "queued/running are shown as the active job (queued says it is waiting); succeeded/failed leave an outcome line."
     },
     "api.list_models_keys.*": {
-      "status": "todo",
-      "note": "Models screen not built yet."
+      "status": "implemented",
+      "note": "Models screen list: id, score (localscore, band, avg_gen_tps, confidence), stale, sized, held_back.quarantine_reason, ctx_size, engine.localscore_note."
     },
     "cli.install_flags.--allow-apt-install": {
       "status": "todo",
@@ -111,12 +111,12 @@
       "note": "Log verbosity; the GUI shows upstream's INFO output."
     },
     "cli.subcommands.benchmark.*": {
-      "status": "todo",
-      "note": "Models screen not built yet; will use the HTTP equivalents (POST/GET/DELETE /models, POST /models/benchmark)."
+      "status": "implemented",
+      "note": "Models screen Benchmark (every model), via POST /models/benchmark (same model_ops.benchmark)."
     },
     "cli.subcommands.list.*": {
-      "status": "todo",
-      "note": "Models screen not built yet; will use the HTTP equivalents (POST/GET/DELETE /models, POST /models/benchmark)."
+      "status": "implemented",
+      "note": "Models screen list, via GET /models (same model_ops.list_models)."
     },
     "cli.subcommands.login.flags.--credentials-file": {
       "status": "implemented",
@@ -142,12 +142,12 @@
       "note": "Unpair button runs `cli logout`."
     },
     "cli.subcommands.pull.*": {
-      "status": "todo",
-      "note": "Models screen not built yet; will use the HTTP equivalents (POST/GET/DELETE /models, POST /models/benchmark)."
+      "status": "implemented",
+      "note": "Models screen Add, via POST /models (same model_ops.pull); --force is reached only as allow_oversized after upstream's too_large_for_device refusal."
     },
     "cli.subcommands.remove.*": {
-      "status": "todo",
-      "note": "Models screen not built yet; will use the HTTP equivalents (POST/GET/DELETE /models, POST /models/benchmark)."
+      "status": "implemented",
+      "note": "Delete icon per model, confirmed on the row, via DELETE /models (same model_ops.remove)."
     },
     "cli.subcommands.status.*": {
       "status": "implemented",
@@ -180,6 +180,10 @@
     "gui_hooks.log_format.install.py": {
       "status": "implemented",
       "note": "ui/src/lib/state.ts progressCaption parses this format."
+    },
+    "gui_hooks.measure_budget_seconds": {
+      "status": "implemented",
+      "note": "Quoted as 'up to N min' per model on the models screen (ui/src/lib/models.ts MEASURE_BUDGET_SECONDS, held to this baseline by models.test.ts)."
     },
     "gui_hooks.service_entry_flags.*": {
       "status": "implemented",
@@ -302,8 +306,8 @@
       "note": "Delegated: the GUI runs upstream's own code for this unchanged, so it matches by construction; any change still shows as drift."
     },
     "service.http_routes.DELETE./models": {
-      "status": "todo",
-      "note": "Models screen not built yet (allow-listed in the proxy already)."
+      "status": "implemented",
+      "note": "Models screen delete icon."
     },
     "service.http_routes.GET./capabilities": {
       "status": "todo",
@@ -313,27 +317,27 @@
       "status": "implemented"
     },
     "service.http_routes.GET./jobs": {
-      "status": "todo",
-      "note": "Models screen not built yet (allow-listed in the proxy already)."
+      "status": "implemented",
+      "note": "Models screen finds a running job, including one started from the CLI or aipotluck.org."
     },
     "service.http_routes.GET./jobs/*": {
-      "status": "todo",
-      "note": "Models screen not built yet (allow-listed in the proxy already)."
+      "status": "implemented",
+      "note": "Models screen polls the job it started."
     },
     "service.http_routes.GET./models": {
-      "status": "todo",
-      "note": "Models screen not built yet (allow-listed in the proxy already)."
+      "status": "implemented",
+      "note": "Models screen list."
     },
     "service.http_routes.GET./status": {
       "status": "implemented"
     },
     "service.http_routes.POST./models": {
-      "status": "todo",
-      "note": "Models screen not built yet (allow-listed in the proxy already)."
+      "status": "implemented",
+      "note": "Models screen Add."
     },
     "service.http_routes.POST./models/benchmark": {
-      "status": "todo",
-      "note": "Models screen not built yet (allow-listed in the proxy already)."
+      "status": "implemented",
+      "note": "Models screen Benchmark."
     },
     "service.llama_server_flags.*": {
       "status": "implemented",

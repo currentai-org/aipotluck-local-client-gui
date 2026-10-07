@@ -61,11 +61,15 @@ pub fn call(method: &str, path: &str, body: Option<Value>) -> Result<ServiceResp
     }
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(2))
-        .timeout(Duration::from_secs(if path.starts_with("/capabilities") {
-            60
-        } else {
-            15
-        }))
+        // /capabilities probes the hardware; POST /models asks Hugging Face for the model's size
+        // (up to 15s) before it answers, so both get longer than the plain reads.
+        .timeout(Duration::from_secs(
+            if path.starts_with("/capabilities") || (method == "POST" && path == "/models") {
+                60
+            } else {
+                15
+            },
+        ))
         .build();
     let url = format!("{}{path}", base());
     let req = agent.request(method, &url);

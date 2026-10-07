@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Icon from './lib/Icon.svelte';
+	import Models from './lib/Models.svelte';
 	import SetupSettings from './lib/SetupSettings.svelte';
 	import { api, onRuntimeReady, onTaskDone, onTaskLog, type PairingPreview } from './lib/api';
 	import {
@@ -274,6 +275,7 @@
 				</div>
 			{/each}
 		</div>
+		<Models serviceHealthy={app.service_healthy} disabled={!!busy} />
 		{#if status?.runtime_config?.llama_cpp?.tag}
 			<p class="small mono">
 				llama.cpp {status.runtime_config.llama_cpp.tag} · {status.runtime_config.llama_cpp.asset_key}

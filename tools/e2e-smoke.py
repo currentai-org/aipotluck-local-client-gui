@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """End-to-end smoke test: drive the REAL app through the whole user flow on a throwaway HOME.
 
-    tools/e2e-smoke.py [--app PATH] [--keep] [--visible] [--default-model]
+    tools/e2e-smoke.py [--app PATH] [--keep] [--visible] [--default-model] [--skip-models]
 
 What it does, through the actual window (WebDriver via tauri-driver -> WebKitWebDriver):
   1. fresh HOME -> app unpacks its runtime -> "Set up this computer", listing client, llama.cpp,
@@ -14,7 +14,10 @@ What it does, through the actual window (WebDriver via tauri-driver -> WebKitWeb
      (real newt download, checksum-verified against upstream's pin)
   5. running screen: service + inference server healthy; the tunnel row must report the fake
      endpoint as NOT connected (proves the status screen reads tunnel_connected, not `running`)
-  6. Unpair -> back to the pair screen, runtime.json logged out
+  6. models: the installed model is listed; a malformed Add is refused; a second small real model
+     is added (progress panel shown while it downloads and measures); Benchmark scores both; one is
+     deleted through its confirm row (skipped with --skip-models)
+  7. Unpair -> back to the pair screen, runtime.json logged out
 Screenshots of every step go to build/e2e/.
 
 The window lives on a private Xvfb display, never the desktop, even when DISPLAY is set (a
@@ -47,6 +50,8 @@ OUT = ROOT / "build" / "e2e"
 # Small (~105 MB), so the customized path is also the fast one. Not upstream's default model, so a
 # Set up that ignored Customize would pull the wrong one and fail the check below.
 CUSTOM_MODEL = "bartowski/SmolLM2-135M-Instruct-GGUF:Q4_K_M"
+# Added from the models screen: the same small model at another quant (~145 MB).
+SECOND_MODEL = "bartowski/SmolLM2-135M-Instruct-GGUF:Q8_0"
 FAKE_PAIRING = {"tunnelId": "e2e-smoke", "tunnelSecret": "e2e-not-a-secret", "tunnelEndpoint": "https://pangolin.invalid"}
 
 
@@ -91,6 +96,11 @@ class WD:
         if not ok:
             raise AssertionError(f"no enabled button labelled {label!r}; page:\n{self.text()}")
 
+    def click_css(self, css: str):
+        ok = self.js("const e = document.querySelector(arguments[0]); if (!e || e.disabled) return false; e.click(); return true;", css)
+        if not ok:
+            raise AssertionError(f"nothing enabled matches {css!r}; page:\n{self.text()}")
+
     def type_into(self, css: str, value: str, clear: bool = False):
         el = self._req("POST", self.s("/element"), {"using": "css selector", "value": css})
         eid = next(iter(el.values()))
@@ -125,12 +135,19 @@ class WD:
                 pass
 
 
+def page_model_default(home: Path) -> str:
+    """The model Set up installed when Customize was skipped: the one upstream sized."""
+    presets = (home / ".config" / "aipotluck" / "llama_presets.ini").read_text()
+    return next(line.strip("[]\n") for line in presets.splitlines() if line.startswith("["))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--app", default=str(ROOT / "src-tauri" / "target" / "debug" / "aipotluck-local-client-gui"))
     ap.add_argument("--keep", action="store_true", help="keep the throwaway HOME for inspection")
     ap.add_argument("--visible", action="store_true", help="use $DISPLAY instead of a private Xvfb")
     ap.add_argument("--default-model", action="store_true", help="skip Customize; install upstream's default model")
+    ap.add_argument("--skip-models", action="store_true", help="skip the models screen (add, benchmark, delete)")
     args = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
 
@@ -246,8 +263,47 @@ def main() -> int:
         assert FAKE_PAIRING["tunnelSecret"] not in page
         steps.append("status: inference server Ready, fake tunnel honestly reported as not connected")
 
+        if not args.skip_models:
+            installed = model or page_model_default(home)
+            repo = installed.split("/", 1)[1].split(":")[0]
+            page = wd.wait_for(repo, 60, "6-models-list")
+            assert "1 installed" in page.lower() or "1 INSTALLED" in page, f"model count missing:\n{page}"
+            steps.append(f"models screen lists {installed}")
+
+            wd.type_into("#add-model", "not a model")
+            wd.click_button("Add")
+            wd.wait_for("isn’t a Hugging Face model id", 10, "6-add-invalid")
+            wd.type_into("#add-model", SECOND_MODEL, clear=True)
+            wd.click_button("Add")
+            page = wd.wait_for("Adding SmolLM2", 60, "6-add-started")
+            assert "then up to 3 min to measure" in page, f"no time hint while adding:\n{page}"
+            wd.wait_for("MB download", 30, "6-add-size")  # the size, from upstream's own preflight
+            time.sleep(2); wd.shot("6-adding")
+            t0 = time.time()
+            page = wd.wait_for("Added SmolLM2", 900, "6-add-done", absent="Adding SmolLM2")
+            page = wd.wait_for("2 installed", 30, "6-add-listed")
+            wd.shot("6-added")
+            steps.append(f"added {SECOND_MODEL} through POST /models in {time.time() - t0:.0f}s, with progress shown")
+
+            wd.click_button("Benchmark")
+            page = wd.wait_for("Benchmarking every model", 30, "6-bench-started")
+            assert "up to about 6 min for all 2" in page, f"no time hint while benchmarking:\n{page}"
+            time.sleep(3); wd.shot("6-benchmarking")
+            t0 = time.time()
+            page = wd.wait_for("Benchmark finished", 900, "6-bench-done", absent="Benchmarking every model")
+            assert "Not measured yet" not in page, f"a model is still unmeasured after the benchmark:\n{page}"
+            wd.shot("6-benchmarked")
+            steps.append(f"benchmarked both through POST /models/benchmark in {time.time() - t0:.0f}s; both scored")
+
+            wd.click_css(f'button[aria-label="Remove {SECOND_MODEL}"]')
+            wd.wait_for("and its downloaded weights", 10, "6-confirm"); wd.shot("6-confirm-delete")
+            wd.click_button("Delete")
+            page = wd.wait_for("1 installed", 60, "6-deleted")
+            assert "Q8_0" not in page, f"deleted model still listed:\n{page}"
+            steps.append(f"deleted {SECOND_MODEL} through DELETE /models after confirming")
+
         wd.click_button("Unpair")
-        wd.wait_for("Pair with AI Potluck", 120, "6-unpair"); wd.shot("6-unpaired")
+        wd.wait_for("Pair with AI Potluck", 120, "7-unpair"); wd.shot("7-unpaired")
         runtime = json.loads((home / ".config" / "aipotluck" / "runtime.json").read_text())
         assert runtime["logged_in"] is False and "tunnel" not in runtime
         steps.append("unpaired via upstream `cli logout`")
@@ -267,8 +323,13 @@ def main() -> int:
         # Nothing the app started may outlive it -- checked after the app is gone, including the
         # GUI-hosted service and the llama-server/newt it supervises. (This check found a real
         # orphaned service the first time it ran.)
-        time.sleep(3)
-        leftover = subprocess.run(["pgrep", "-af", str(home)], capture_output=True, text=True).stdout.strip()
+        # Shutdown takes a moment (the service stops newt and llama-server cleanly), so give it up to
+        # 30s; anything still there after that has really outlived the app.
+        for _ in range(30):
+            time.sleep(1)
+            leftover = subprocess.run(["pgrep", "-af", str(home)], capture_output=True, text=True).stdout.strip()
+            if not leftover:
+                break
         if leftover:
             print("E2E FAILED: processes outlived the app:\n" + leftover, file=sys.stderr)
             for line in leftover.splitlines():

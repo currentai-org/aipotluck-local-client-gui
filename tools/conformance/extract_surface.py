@@ -659,6 +659,10 @@ def extract_gui_hooks(repo: pathlib.Path) -> dict[str, Any]:
     pd = _parse(repo / "aipotluck" / "installer" / "platform_detect.py")
     if pd is not None:
         out["has_detect_os"] = _find_function(pd, "detect_os") is not None
+    perf = _parse(repo / "aipotluck" / "installer" / "model_perf.py")
+    if perf is not None:
+        # How long one model's benchmark may take; the models screen quotes it to the user.
+        out["measure_budget_seconds"] = _module_constants(perf).get("PROBE_BUDGET_SECONDS")
     for module in ("install.py", "cli.py"):
         tree = _parse(repo / "aipotluck" / "installer" / module)
         if tree is None:
