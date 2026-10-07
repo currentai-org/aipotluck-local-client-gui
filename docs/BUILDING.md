@@ -27,6 +27,7 @@ sudo apt-get update && sudo apt-get install -y \
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 . "$HOME/.cargo/env"
 cargo install tauri-cli --version '^2' --locked
+cargo install tauri-driver --locked     # only needed for tools/e2e-smoke.py
 ```
 
 ## 3. Node + pnpm
@@ -35,6 +36,21 @@ Node ≥ 20 and pnpm. (`npm i -g pnpm` with a user npm prefix if `/usr/local` is
 
 ## glibc / release builds
 
-A binary links against the build host's glibc. Builds made on a newer distro (e.g. Debian 13, glibc
-2.41) are **dev-only**. Release `.deb`/AppImage artifacts must be built on the oldest supported base
-— Ubuntu 22.04 (glibc 2.35), matching upstream's Jetson/JetPack 6 targets.
+A binary links against the build host's glibc. Measured: a build made on the Debian 13 dev host
+requires **GLIBC_2.39**, so it runs on Debian 13 and Ubuntu 24.04+ but **not** Ubuntu 22.04 /
+Debian 12. Those dev builds are fine for testing. Release `.deb`/AppImage artifacts should be built
+on the oldest supported base — Ubuntu 22.04 (glibc 2.35, matching upstream's Jetson/JetPack 6
+targets) — e.g. in an `ubuntu:22.04` container or a GitHub Actions `ubuntu-22.04` runner.
+
+Check what a build needs: `objdump -T src-tauri/target/release/aipotluck-local-client-gui | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1`
+
+## Testing a build
+
+```bash
+tools/check.sh                                   # merge gate (unit + contract + conformance)
+DISPLAY=:99 tools/e2e-smoke.py --app src-tauri/target/release/aipotluck-local-client-gui
+```
+
+`e2e-smoke.py` needs `cargo install tauri-driver --locked` and an X display (`Xvfb :99 &`). It
+drives the real window through set up → pair (with a fake, unreachable pairing) → status →
+unpair on a throwaway HOME, and fails if any process the app started outlives it.
