@@ -269,8 +269,11 @@ impl Runtime {
                 .join("service")
                 .join("aipotluck_service.py"),
         )
-        .args(["--config-dir", config_dir, "--log-dir", log_dir])
-        .stdout(log)
+        .args(["--config-dir", config_dir, "--log-dir", log_dir]);
+        if let Some(port) = crate::service::test_port() {
+            cmd.args(["--port", &port.to_string()]);
+        }
+        cmd.stdout(log)
         .stderr(log2);
         // A GUI-hosted service must never outlive the GUI, even when the GUI dies without running
         // its exit handler (killed, crashed, session torn down). On Linux the kernel enforces that:

@@ -18,6 +18,8 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
+const TEST_LLAMA_PORT_ENV: &str = "AIPOTLUCK_GUI_TEST_LLAMA_PORT";
+
 pub const SETTINGS_URL: &str = "https://aipotluck.org/chat/settings/local-inference";
 
 #[derive(Default)]
@@ -242,6 +244,13 @@ async fn setup_device(
     if let Some(m) = model {
         // One token, so the value can never be read as a flag of its own.
         args.push(format!("--model-hf={m}"));
+    }
+    // Test-only, alongside service::TEST_PORT_ENV: keep llama-server off a real install's port.
+    if let Some(port) = std::env::var(TEST_LLAMA_PORT_ENV)
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+    {
+        args.push(format!("--server-port={port}"));
     }
     if !probe["service_manager_usable"].as_bool().unwrap_or(true) {
         args.push("--no-start".into());
