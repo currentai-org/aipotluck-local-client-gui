@@ -4,6 +4,7 @@ import {
 	MEASURE_BUDGET_SECONDS,
 	activeJob,
 	canForceAdd,
+	downloadProgress,
 	elapsedSeconds,
 	errorMessage,
 	formatElapsed,
@@ -124,10 +125,30 @@ describe('jobs', () => {
 	});
 
 	it('the hint quotes the download size and upstream’s measuring budget', () => {
-		expect(jobHint(job(), { downloadBytes: 2_497_281_312 })).toMatch(/^~2\.5 GB download, then up to 3 min/);
+		expect(jobHint(job(), { downloadBytes: 2_497_281_312 })).toMatch(/^~2\.5 GB download, then a moment to size it/);
+		expect(jobHint(job())).not.toContain('measure');
 		expect(jobHint(job({ kind: 'benchmark', model: null }), { modelCount: 3 })).toBe(
 			'Up to 3 min per model, so up to about 9 min for all 3.'
 		);
+	});
+
+	it('a download shows bytes received against upstream’s total, or the expected size until it knows', () => {
+		const at = '2026-10-07T20:00:09+00:00';
+		const downloading = (received: number, total: number | null) =>
+			job({ progress: said('downloading unsloth/Qwen3-4B-GGUF:Q4_K_M'), download: { received_bytes: received, total_bytes: total, updated_at: at } });
+		expect(downloadProgress(downloading(1_200_000_000, 2_497_281_312))).toEqual({
+			fraction: 1_200_000_000 / 2_497_281_312,
+			text: '1.2 GB of 2.5 GB (48%)'
+		});
+		expect(downloadProgress(downloading(500_000_000, null), 2_000_000_000)?.text).toBe('500 MB of 2 GB (25%)');
+		expect(downloadProgress(downloading(500_000_000, null))).toEqual({ fraction: null, text: '500 MB so far' });
+	});
+
+	it('no download bar once the pull has moved on to sizing, or for a benchmark', () => {
+		const d = { received_bytes: 10, total_bytes: 10, updated_at: '' };
+		expect(downloadProgress(job({ progress: said('downloading x/y', 'sizing x/y'), download: d }))).toBeNull();
+		expect(downloadProgress(job({ kind: 'benchmark', progress: said('downloading x/y'), download: d }))).toBeNull();
+		expect(downloadProgress(job({ progress: said('downloading x/y') }))).toBeNull();
 	});
 
 	it('elapsed time counts from when upstream started the job', () => {
@@ -140,6 +161,9 @@ describe('jobs', () => {
 	it('outcomes: added with a score, rejected by upstream, failed', () => {
 		expect(jobOutcome(job({ state: 'succeeded', result: { score: { localscore: 312.2 } } })).text).toBe(
 			'Added Qwen3-4B-GGUF Q4_K_M, LocalScore 312.'
+		);
+		expect(jobOutcome(job({ state: 'succeeded', result: { score: null } })).text).toBe(
+			'Added Qwen3-4B-GGUF Q4_K_M. Run a benchmark to see how fast it is here.'
 		);
 		const rejected = jobOutcome(
 			job({ state: 'succeeded', result: { rejected: true, rejection: 'a turn would take 4 minutes', removed: true } })

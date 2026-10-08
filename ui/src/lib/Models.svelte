@@ -10,6 +10,7 @@
 		MEASURE_BUDGET_SECONDS,
 		activeJob,
 		canForceAdd,
+		downloadProgress,
 		elapsedSeconds,
 		errorMessage,
 		formatElapsed,
@@ -46,7 +47,9 @@
 	const count = $derived(listing?.models.length ?? 0);
 	const locked = $derived(disabled || !!job || sending || !!deleting);
 	const stage = $derived(job ? jobStage(job, count) : '');
-	const hint = $derived(job ? jobHint(job, { downloadBytes: job.model ? sizes[job.model] : null, modelCount: count }) : '');
+	const expected = $derived(job?.model ? sizes[job.model] : null);
+	const hint = $derived(job ? jobHint(job, { downloadBytes: expected, modelCount: count }) : '');
+	const download = $derived(job ? downloadProgress(job, expected) : null);
 
 	async function loadModels() {
 		try {
@@ -229,8 +232,21 @@
 				<span class="status-label">{jobTitle(job)}</span>
 				<span class="mono small">{formatElapsed(elapsedSeconds(job, now))}</span>
 			</div>
-			<div class="progress" aria-label={stage}></div>
-			<p class="small">{stage}</p>
+			{#if download?.fraction != null}
+				<div
+					class="progress determinate"
+					role="progressbar"
+					aria-label={stage}
+					aria-valuemin="0"
+					aria-valuemax="100"
+					aria-valuenow={Math.floor(download.fraction * 100)}
+				>
+					<span style="width: {download.fraction * 100}%"></span>
+				</div>
+			{:else}
+				<div class="progress" aria-label={stage}></div>
+			{/if}
+			<p class="small">{stage}{#if download}<span class="mono"> · {download.text}</span>{/if}</p>
 			<p class="small faint">{hint}</p>
 			{#if job.progress.length}
 				<details>
@@ -377,6 +393,15 @@
 	}
 	.job {
 		gap: var(--ds-space-2);
+	}
+	.progress.determinate::after {
+		display: none;
+	}
+	.progress.determinate span {
+		display: block;
+		height: 100%;
+		background: var(--ds-fg-1);
+		transition: width var(--ds-duration-fast);
 	}
 	.job-line {
 		display: flex;

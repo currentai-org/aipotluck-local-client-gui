@@ -189,7 +189,7 @@ def main() -> int:
     time.sleep(2)
     wd = WD(f"http://127.0.0.1:{port}")
     steps = []
-    known = []  # upstream outcomes the GUI correctly surfaced (a defect, a busy machine); reported, not failed
+    known = []  # upstream outcomes the GUI correctly surfaced (e.g. a busy machine); reported, not failed
     try:
         wd.start(args.app)
         wd.wait_for("Set up this computer", 120, "1-setup-screen")
@@ -277,7 +277,7 @@ def main() -> int:
             wd.type_into("#add-model", SECOND_MODEL, clear=True)
             wd.click_button("Add")
             page = wd.wait_for("Adding SmolLM2", 60, "6-add-started")
-            assert "then up to 3 min to measure" in page, f"no time hint while adding:\n{page}"
+            assert "then a moment to size it" in page, f"no time hint while adding:\n{page}"
             wd.wait_for("MB download", 30, "6-add-size")  # the size, from upstream's own preflight
             time.sleep(2); wd.shot("6-adding")
             t0 = time.time()
@@ -319,18 +319,8 @@ def main() -> int:
                     break
                 time.sleep(1)
             wd.shot("6-after-delete")
-            if "could not remove it" in page.lower():
-                # Upstream bug (pinned 2ac2591): llama-server's router refuses to delete any model
-                # that has a preset -- 500 "not removable (not from cache)" -- and every pulled
-                # model has one, so the CLI's `remove` fails the same way. What this GUI owes the
-                # user is upstream's refusal on screen with the model still listed; once upstream
-                # fixes it, the branch below takes over and checks the row really goes.
-                assert "2 installed" in page.lower(), f"refused delete but the list changed:\n{page}"
-                known.append(f"upstream bug: DELETE /models refused for {SECOND_MODEL} (router: not removable, "
-                             "not from cache); the UI showed upstream's error")
-            else:
-                assert "Q8_0" not in page, f"deleted model still listed:\n{page}"
-                steps.append(f"deleted {SECOND_MODEL} through DELETE /models after confirming")
+            assert "1 installed" in page.lower() and "Q8_0" not in page, f"deleted model still listed:\n{page}"
+            steps.append(f"deleted {SECOND_MODEL} through DELETE /models after confirming")
 
         wd.click_button("Unpair")
         wd.wait_for("Pair with AI Potluck", 120, "7-unpair"); wd.shot("7-unpaired")
