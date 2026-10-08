@@ -11,6 +11,23 @@ import { formatBytes } from './state';
  */
 export const MEASURE_BUDGET_SECONDS = 180;
 
+/**
+ * Upstream's LocalScore band floors (aipotluck/installer/model_localscore.py BAND_POOR/GOOD/
+ * EXCELLENT): below `fair` is poor, then fair, good, excellent. The screen explains the number in
+ * these terms; models.test.ts holds them to the conformance baseline.
+ */
+export const SCORE_BANDS = { fair: 100, good: 250, excellent: 1000 };
+
+/** A plain-words explanation of LocalScore, for someone who has never seen the number. */
+export function localScoreExplainer(): string {
+	const n = (v: number) => v.toLocaleString('en-US');
+	return (
+		`LocalScore is how quickly this computer can answer with a model, measured here. Higher is better: ` +
+		`under ${n(SCORE_BANDS.fair)} is poor (replies feel slow), ${n(SCORE_BANDS.fair)}–${n(SCORE_BANDS.good)} is fair, ` +
+		`${n(SCORE_BANDS.good)}–${n(SCORE_BANDS.excellent)} is good, and over ${n(SCORE_BANDS.excellent)} is excellent.`
+	);
+}
+
 export type Score = {
 	localscore: number;
 	band?: string;
@@ -83,7 +100,7 @@ export type ModelRow = {
 	repo: string;
 	owner: string;
 	quant: string | null;
-	/** LocalScore, formatted, or null when not measured. */
+	/** LocalScore, formatted with its band ("39 (poor)"), or null when not measured. */
 	score: string | null;
 	facts: string[];
 	notes: Note[];
@@ -110,7 +127,6 @@ export function modelRow(m: ModelEntry): ModelRow {
 	if (!m.sized) notes.push({ text: 'Not sized for this computer yet' });
 	const s = m.score;
 	if (s) {
-		if (s.band) facts.push(s.band);
 		if (typeof s.avg_gen_tps === 'number') facts.push(`${s.avg_gen_tps.toFixed(1)} tok/s`);
 		if (s.confidence === 'low') notes.push({ text: 'Low confidence: this computer’s speed varied between runs' });
 		if (m.stale) notes.push({ text: 'Score is out of date; run a benchmark', warn: true });
@@ -124,7 +140,7 @@ export function modelRow(m: ModelEntry): ModelRow {
 		repo,
 		owner,
 		quant,
-		score: s ? Math.round(s.localscore).toLocaleString('en-US') : null,
+		score: s ? `${Math.round(s.localscore).toLocaleString('en-US')}${s.band ? ` (${s.band})` : ''}` : null,
 		facts,
 		notes
 	};

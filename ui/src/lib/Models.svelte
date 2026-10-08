@@ -18,6 +18,7 @@
 		jobOutcome,
 		jobStage,
 		jobTitle,
+		localScoreExplainer,
 		modelName,
 		modelRow,
 		type Job,
@@ -222,8 +223,8 @@
 	{#if deleteError}
 		<div class="error" role="alert"><Icon name="error-warning-line" /><span>{deleteError}</span></div>
 	{/if}
-	{#if listing?.engine?.localscore_note && rows.some((r) => r.score)}
-		<p class="small faint">{listing.engine.localscore_note}</p>
+	{#if rows.some((r) => r.score)}
+		<p class="small faint">{localScoreExplainer()}</p>
 	{/if}
 
 	{#if job}
@@ -360,7 +361,7 @@
 		font-size: var(--ds-text-small);
 	}
 	.model-meta {
-		color: var(--ds-fg-2);
+		color: var(--ds-fg-3);
 	}
 	.model-note {
 		display: flex;
