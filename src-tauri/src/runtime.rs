@@ -162,6 +162,15 @@ impl Runtime {
             .env_remove("PYTHONPATH")
             .env_remove("PYTHONHOME")
             .stdin(Stdio::null());
+        // A GUI-subsystem app on Windows spawning a console program (python.exe) pops a console
+        // window per child unless told not to -- one flashing black window per probe, every
+        // poll. CREATE_NO_WINDOW suppresses it.
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            c.creation_flags(CREATE_NO_WINDOW);
+        }
         c
     }
 
