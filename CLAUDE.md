@@ -98,6 +98,11 @@ Gate: `tools/check.sh` runs:
 - Python contract tests against the pinned upstream's real code;
 - the conformance check (no drift, every upstream item classified).
 
+GitHub Actions runs the same gate (`.github/workflows/check.yml`) on every PR and push to `main`.
+`build.yml` builds installers for every target in `.github/build-targets.json` on every PR, and a
+draft release on a `v*.*.*` tag (docs/RELEASING.md). A PR whose installers don't build isn't
+mergeable, the same as a red `check.sh`.
+
 ## Runtime parameters are upstream's
 
 Anything computed about the device (ctx size, parallel slots, KV-cache type) is upstream's

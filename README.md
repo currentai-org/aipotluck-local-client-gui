@@ -30,6 +30,10 @@ tools/build.sh            # .deb + .AppImage in src-tauri/target/release/bundle/
 tools/check.sh            # the merge gate
 ```
 
+Release installers for all five targets (Linux x64/arm64, Windows x64, macOS arm64/x64) are built
+by GitHub Actions (`.github/workflows/build.yml`) on a `v*.*.*` tag. See
+[docs/RELEASING.md](docs/RELEASING.md).
+
 ## Layout
 
 ```
@@ -41,7 +45,8 @@ ui/                                Svelte UI; ui/src/design/ = Alpha DS synced f
 conformance/                       upstream interface baseline + coverage manifest
 tests/                             contract tests vs upstream's real code (run on the bundled Python)
 tools/                             build, check, stage-runtime, sync_upstream, watchdog, design sync
-docs/                              BUILDING, CONFORMANCE, DESIGN-SYSTEM, research/
+docs/                              BUILDING, RELEASING, CONFORMANCE, DESIGN-SYSTEM, research/
+.github/                           CI: check.yml (the gate), build.yml (installers + draft release), build-targets.json
 ```
 
 Read [CLAUDE.md](CLAUDE.md) (conventions), [ARCHITECTURE.md](ARCHITECTURE.md) (design), and
