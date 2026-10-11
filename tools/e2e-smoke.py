@@ -319,7 +319,11 @@ def main() -> int:
                     break
                 time.sleep(1)
             wd.shot("6-after-delete")
-            assert "1 installed" in page.lower() and "Q8_0" not in page, f"deleted model still listed:\n{page}"
+            # Check the model LIST, not the whole page: the success notice itself reads "Removed
+            # ...Q8_0.", so a page-wide "Q8_0 not in page" fails exactly when the delete worked.
+            listed = wd.js("return [...document.querySelectorAll('.model .model-name')].map(e => e.innerText).join('\\n')")
+            assert "1 installed" in page.lower() and "Q8_0" not in listed, (
+                f"deleted model still listed:\nlist: {listed!r}\n{page}")
             steps.append(f"deleted {SECOND_MODEL} through DELETE /models after confirming")
 
         wd.click_button("Unpair")
