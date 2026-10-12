@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""The release version, and whether everything that carries it agrees.
+"""The release version, the build matrix, and whether everything that carries a version agrees.
 
     tools/release_version.py                 print the version (from src-tauri/tauri.conf.json)
     tools/release_version.py --check         exit 1 unless tauri.conf.json, Cargo.toml and
                                              ui/package.json all carry the same version
     tools/release_version.py --tag v0.2.0    also exit 1 unless the tag is exactly v<version>
-    tools/release_version.py --matrix        print the build matrix (.github/build-targets.json)
-                                             as compact JSON for a GitHub Actions `fromJSON`
+    tools/release_version.py --matrix        the ENABLED targets of .github/build-targets.json, as
+                                             compact JSON for a GitHub Actions `fromJSON`
+    tools/release_version.py --matrix --only windows-x64
+                                             just that target, even if disabled -- an explicit,
+                                             one-off request (workflow_dispatch) to try it
+    tools/release_version.py --target-info linux-x64
+                                             one target's entry as JSON (tools/build.sh uses it)
 
 The installers take their version from tauri.conf.json, so a release tag that disagrees with it
 would publish files whose names and About box say a different version than the tag. The release
@@ -38,9 +43,22 @@ def versions() -> dict[str, str | None]:
     }
 
 
-def matrix() -> dict:
-    data = json.loads((ROOT / ".github" / "build-targets.json").read_text(encoding="utf-8"))
-    return {"include": data["targets"]}
+def targets() -> list[dict]:
+    return json.loads((ROOT / ".github" / "build-targets.json").read_text(encoding="utf-8"))["targets"]
+
+
+def matrix(only: str | None = None) -> dict:
+    all_targets = targets()
+    if only:
+        picked = [t for t in all_targets if t["target"] == only]
+        if not picked:
+            known = ", ".join(t["target"] for t in all_targets)
+            raise SystemExit(f"no such build target: {only!r} (known: {known})")
+    else:
+        picked = [t for t in all_targets if t.get("enabled")]
+        if not picked:
+            raise SystemExit("no build target is enabled in .github/build-targets.json")
+    return {"include": picked}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -48,10 +66,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--tag", default=None)
     ap.add_argument("--matrix", action="store_true")
+    ap.add_argument("--only", default=None)
+    ap.add_argument("--target-info", default=None)
     args = ap.parse_args(argv)
 
     if args.matrix:
-        print(json.dumps(matrix(), separators=(",", ":")))
+        print(json.dumps(matrix(args.only or None), separators=(",", ":")))
+        return 0
+    if args.target_info:
+        print(json.dumps(matrix(args.target_info)["include"][0]))
         return 0
 
     found = versions()

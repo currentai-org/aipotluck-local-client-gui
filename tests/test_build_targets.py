@@ -84,11 +84,38 @@ def test_runner_is_a_label_or_a_list_of_labels():
         assert isinstance(r, str) or (isinstance(r, list) and r and all(isinstance(x, str) for x in r))
 
 
-def test_matrix_output_is_what_the_workflow_feeds_to_fromJSON():
+def test_the_default_matrix_builds_only_enabled_targets():
+    """A disabled target must cost nothing on PRs and pushes: it isn't in the default matrix."""
     r = _run("--matrix")
     assert r.returncode == 0, r.stderr
     m = json.loads(r.stdout)
-    assert [t["target"] for t in m["include"]] == [t["target"] for t in TARGETS]
+    assert [t["target"] for t in m["include"]] == [t["target"] for t in TARGETS if t["enabled"]]
+
+
+def test_only_linux_is_enabled_until_windows_and_macos_are_proven_locally():
+    """Today's decision, made explicit so flipping a target on is a deliberate, visible change
+    (update this test in the same commit that enables Windows or macOS)."""
+    assert {t["target"] for t in TARGETS if t["enabled"]} == {"linux-x64", "linux-arm64"}
+
+
+def test_every_target_says_whether_it_is_enabled():
+    for t in TARGETS:
+        assert isinstance(t.get("enabled"), bool), f"{t['target']}: 'enabled' must be true or false"
+
+
+def test_a_disabled_target_can_still_be_built_on_request():
+    """workflow_dispatch `only` and tools/build.sh --release-target both rely on this."""
+    disabled = [t["target"] for t in TARGETS if not t["enabled"]]
+    assert disabled
+    for name in disabled:
+        r = _run("--matrix", "--only", name)
+        assert r.returncode == 0, r.stderr
+        assert [t["target"] for t in json.loads(r.stdout)["include"]] == [name]
+
+
+def test_an_unknown_target_is_refused_rather_than_building_nothing():
+    r = _run("--matrix", "--only", "windows-arm64")
+    assert r.returncode != 0 and "no such build target" in (r.stderr + r.stdout)
 
 
 def test_version_files_agree_today():
