@@ -99,9 +99,11 @@ Gate: `tools/check.sh` runs:
 - the conformance check (no drift, every upstream item classified).
 
 GitHub Actions runs the same gate (`.github/workflows/check.yml`) on every PR and push to `main`.
-`build.yml` builds installers for every target in `.github/build-targets.json` on every PR, and a
+`build.yml` builds installers for every *enabled* target in `.github/build-targets.json` (Linux
+today) on every PR, publishes the rolling `nightly` prerelease on every push to `main`, and makes a
 draft release on a `v*.*.*` tag (docs/RELEASING.md). A PR whose installers don't build isn't
-mergeable, the same as a red `check.sh`.
+mergeable, the same as a red `check.sh`. A disabled target (Windows, macOS) is enabled only after
+`tools/build.sh --release-target <t>` has produced a working installer on a real machine of that OS.
 
 ## Runtime parameters are upstream's
 

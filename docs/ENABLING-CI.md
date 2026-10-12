@@ -1,118 +1,158 @@
 # Turning on build automation on github.com
 
 The step-by-step plan for enabling `.github/workflows/build.yml` and `check.yml` in
-`currentai-org/aipotluck-local-client-gui`. Everything here needs a person with admin rights on the
-repo (and, for step 2, on the org). None of it has been done yet. The workflows exist only on the
-local branch `build/release-workflow`.
+`currentai-org/aipotluck-local-client-gui`. Every step needs a person with admin rights on the repo
+(and, for step 0, on the org). None of it has been done. The workflows exist only on the branch
+`build/release-workflow`.
 
-Expected time: about 1 hour of clicking, plus one ~30-minute first build to watch.
+**Phase 1 (this plan): Linux only.** linux-x64 and linux-arm64 build on every PR. Every push to
+`main` publishes a **nightly** prerelease. A `v*` tag makes a draft release. Windows and macOS are
+declared but disabled, so they cost nothing until you've proven them locally (phase 2, at the end).
+
+Expected time: about 1 hour of clicking, plus watching one ~20-minute first build.
+
+## Cost, Linux-only phase
+
+Computed from GitHub's standard per-minute rates (Linux x64 $0.006, arm64 $0.005), assuming ~12 min
+per target build plus ~2 min of plan and publish:
+
+| | Linux only (phase 1) | All five targets (for comparison) |
+|---|---|---|
+| One push to `main` (build + nightly publish) | **$0.14** | $1.75 |
+| 60 pushes to `main` / month | **$8.64** | $105.12 |
+| 150 pushes / month | **$21.60** | $262.80 |
+| One merged change incl. ~3 PR builds | $0.58 | $7.01 |
+
+The jump to "all five" is almost entirely the two macOS jobs ($0.062/min). When macOS turns on, a
+nightly on *every* push becomes the expensive part. Options then:
+- move macOS builds to the Mac mini;
+- or build nightlies on a schedule (once a day) instead of per push. That's a one-line change.
 
 ## 0. Before you start (5 min)
 
-- [ ] Confirm the repo's visibility is **private**. Nothing here needs self-hosted runners, so
-      public would also be safe. Revisit only if a Mac mini runner is added later.
-- [ ] Check the org's Actions billing (Settings → Billing → Actions):
-  - the build matrix uses only **standard** runners, which need no plan upgrade;
-  - a full five-target build costs about **$1.74**, about 85% of that from the two macOS jobs;
-  - with no spending limit/payment method, private-repo minutes stop at the free quota. That quota
-    is already being exceeded by aipotluck.org's CI (CUR-1534 billing notes), so confirm a payment
-    method is on file, or set an Actions budget for this repo.
+- [ ] Confirm the repo's visibility. Private is fine. Nothing here uses self-hosted runners.
+- [ ] Org → Settings → Billing → **Budgets and alerts**: create an Actions budget scoped to this
+      repo (e.g. $25/month with an alert at 80%) so a runaway loop can't surprise anyone.
+- [ ] Confirm a payment method is on the org. aipotluck.org's CI already uses up the free minutes,
+      so without one this repo's jobs will queue and then fail on quota.
 
 ## 1. Push the branch and open a PR (5 min)
 
-- [ ] `git push -u origin build/release-workflow` from your checkout. Or approve me to push it;
-      by repo rule, I won't push without an explicit yes.
-- [ ] Open a PR into `main`. Opening it is what first runs the workflows: `check` and `build` both
-      trigger on `pull_request`.
+- [ ] `git push -u origin build/release-workflow`. Push it yourself, or give me an explicit yes;
+      by repo rule I won't push otherwise.
+- [ ] Open a PR into `main`. That first runs `check` and `build` (Linux only, artifacts only:
+      PRs never publish).
 
-## 2. Repository / org Actions settings (10 min)
+## 2. Repository Actions settings (10 min)
 
-At **github.com/currentai-org/aipotluck-local-client-gui → Settings → Actions → General**:
+**Repo → Settings → Actions → General**:
 
-- [ ] **Actions permissions**: allow actions, and either:
-  - "Allow all actions", or
-  - "Allow currentai-org and select non-currentai-org actions", with this allow-list:
-    ```
-    actions/checkout@*, actions/setup-node@*, actions/upload-artifact@*, actions/download-artifact@*,
-    pnpm/action-setup@*, Swatinem/rust-cache@*
-    ```
-  If the org policy is stricter (Org → Settings → Actions), an org owner adds the same list there.
-- [ ] **Workflow permissions**: leave the default "Read repository contents". The release job asks
-      for `contents: write` itself, scoped to that one job.
-- [ ] **Fork pull request workflows**: leave "Require approval for first-time contributors" (or
-      stricter).
-- [ ] **Artifact and log retention**: the default (90 days) is fine. Installers set their own
-      14-day retention.
+- [ ] **Actions permissions**: allow actions, either all of them or "currentai-org + selected" with
+      this allow-list:
+      ```
+      actions/checkout@*, actions/setup-node@*, actions/upload-artifact@*,
+      actions/download-artifact@*, pnpm/action-setup@*, Swatinem/rust-cache@*
+      ```
+      If the org restricts actions (Org → Settings → Actions), an org owner adds the same list there.
+- [ ] **Workflow permissions**: keep **"Read repository contents and packages permissions"**. The
+      `nightly` and `release` jobs request `contents: write` for themselves, which works under the
+      read default; nothing else gets write.
+- [ ] **Fork pull request workflows**: keep "Require approval for first-time contributors".
 
-## 3. Watch the first run on the PR (30–40 min, mostly waiting)
+## 3. Watch the first PR run (~20 min)
 
-On the PR's **Checks** tab:
+- [ ] `check / tools/check.sh`: green (the same gate as running `tools/check.sh` locally).
+- [ ] `build / Plan`: prints a two-target matrix (`linux-x64`, `linux-arm64`), version `0.1.0`,
+      channel `none`.
+- [ ] `build / Build linux-x64` and `Build linux-arm64`: green. Each run summary shows
+      **requires GLIBC_2.35** (or lower).
+- [ ] **No** `Publish nightly` job runs. That's correct for a PR.
+- [ ] Download `installers-linux-x64` from the run's Artifacts and install it on your x86 laptop:
+      `sudo apt install ./aipotluck-local-client-gui_0.1.0-nightly.*_linux-x64.deb`. Then Set up →
+      Pair → check the status screen. This is CLAUDE.md's real-machine check for anything visible.
 
-- [ ] `check / tools/check.sh`: green. This is the same gate as running `tools/check.sh` locally.
-- [ ] `build / Plan`: prints the five-target matrix and `0.1.0`.
-- [ ] `build / Build <target>` ×5. Expected first-run surprises, in order of likelihood:
-  - **windows-x64**: it is the first Windows build this code has ever had. The Rust compiles
-    (`#[cfg(windows)]` paths were type-checked from Linux), but the bundler, NSIS/WiX and the
-    Git-Bash staging script have not run on Windows before. If it fails, re-run with
-    `workflow_dispatch` + `only: windows-x64` while iterating.
-  - **macos-x64**: cross-compiles from the arm64 runner. If it fails, drop it from
-    `.github/build-targets.json` (it's "optional") rather than block the rest.
-  - **linux-arm64**: runs on the standard `ubuntu-22.04-arm` runner, available to private repos
-    since 2026-01-29 and billed as standard minutes. If it sits queued anyway, remove the target
-    for now (it's "nice", not "must").
-- [ ] On each Linux job, the run summary shows **requires GLIBC_2.35 or lower**. Higher means
-      something pulled in a newer dependency.
-- [ ] Download `installers-linux-x64` from the run's **Artifacts**. Install the `.deb` on your x86
-      laptop: `sudo apt install ./aipotluck-local-client-gui_0.1.0_linux-x64.deb`, then Set up →
-      Pair. This is the real-machine check CLAUDE.md requires before merging anything with a
-      visible effect.
+## 4. Protect `main` (5 min)
 
-## 4. Make the gates required (5 min)
-
-**Settings → Branches → Add branch ruleset** (or a classic protection rule) for `main`:
+**Settings → Rules → Rulesets → New branch ruleset**, target `main`:
 
 - [ ] Require a pull request before merging.
-- [ ] Require status checks to pass, and add:
-  - `tools/check.sh`
-  - `Build linux-x64`, `Build windows-x64`, `Build macos-arm64` (the three "must" targets)
+- [ ] Require status checks: `tools/check.sh`, `Build linux-x64`. Leave `Build linux-arm64`
+      optional for a week.
+- [ ] Block force pushes. The `nightly` *tag* is moved by the workflow, but branch rules don't
+      cover tags, so nothing here blocks it. Don't add a tag ruleset that covers `nightly`.
+- [ ] Merge the PR with **"Create a merge commit"** (CLAUDE.md asks for `--no-ff`).
 
-  Leave `linux-arm64` and `macos-x64` as non-required until they've been green for a while.
-- [ ] Block force pushes and deletion. This matches the repo rule "never force-push a shared
-      branch".
-- [ ] Merge the PR (CLAUDE.md asks for `--no-ff`; in the UI choose "Create a merge commit").
+## 5. Watch the first nightly (~20 min after the merge)
 
-## 5. Cut the first release (15 min)
+The merge is a push to `main`, so `build` runs again, with channel `nightly`:
 
-- [ ] On `main`: `git tag -a v0.1.0 -m "v0.1.0" && git push origin v0.1.0`. The version is already
-      `0.1.0` in all three files.
-- [ ] **Actions → build** runs on the tag; the `plan` job checks the tag equals `v0.1.0`.
-- [ ] When green: **Releases** shows a **draft** "aipotluck-local-client-gui 0.1.0". It holds about
-      11 installers plus `SHA256SUMS`.
-- [ ] Download one installer per must-ship OS you can reach and run it. At minimum the Linux one.
-- [ ] Edit the notes. **Say plainly that the macOS and Windows builds are unsigned** and how to get
-      past Gatekeeper and SmartScreen. Then **Publish**.
+- [ ] `Publish nightly` runs after both Linux builds pass.
+- [ ] **Releases** now shows **"Nightly build (0.1.0-nightly.YYYYMMDD.<sha>)"**, marked
+      **Pre-release**, *not* "Latest". It contains:
+  - `aipotluck-local-client-gui_0.1.0-nightly.<date>.<sha>_linux-x64.deb` / `.AppImage`, and the
+    same for `linux-arm64`;
+  - `aipotluck-local-client-gui_nightly_linux-x64.deb` / `.AppImage`, and the same for
+    `linux-arm64`: the stable "latest nightly" names;
+  - `SHA256SUMS`.
+- [ ] The **`nightly` tag** points at the merge commit (Code → Tags).
+- [ ] Download via the stable link while signed in to GitHub:
+      `https://github.com/currentai-org/aipotluck-local-client-gui/releases/download/nightly/aipotluck-local-client-gui_nightly_linux-x64.deb`.
+      Check `sha256sum` against `SHA256SUMS`.
+- [ ] Push a trivial code change to `main` (through a PR). After it builds, the release title and
+      assets show the *new* commit, and nothing from the previous nightly remains.
 
-## 6. Housekeeping (5 min)
+## 6. First tagged release (optional now, 15 min)
 
-- [ ] **Settings → Code security**: enable Dependabot version updates. `.github/dependabot.yml`
-      already asks for monthly grouped bumps of the SHA-pinned actions.
-- [ ] Optional: **Settings → Notifications** or a watch on the repo's Actions, so a red nightly or
-      release reaches you.
+- [ ] `git tag -a v0.1.0 -m v0.1.0 && git push origin v0.1.0`.
+- [ ] A **draft** "aipotluck-local-client-gui 0.1.0" appears with the Linux installers and
+      `SHA256SUMS`. Install, write notes, **Publish**. This becomes the repo's "Latest" release;
+      the nightly never does.
 
-## Later (not needed for unsigned builds)
+## 7. Housekeeping (5 min)
 
-| When | What | Where |
-|---|---|---|
-| Apple Developer ID exists | add the six `APPLE_*` secrets (Settings → Secrets and variables → Actions). The workflow already passes them through and signs and notarizes when they're present | docs/RELEASING.md § Signing |
-| Windows certificate exists | add `bundle.windows.signCommand` + its secrets | docs/RELEASING.md § Signing |
-| Mac mini online | register it as a runner on this repo only, then point the two `macos-*` targets' `runner` at its labels in `.github/build-targets.json` | docs/RELEASING.md § Mac mini |
-| You want nightly builds | add `schedule: - cron: '0 10 * * *'` to `build.yml`'s `on:`, about $52/month | `.github/workflows/build.yml` |
+- [ ] **Settings → Code security**: enable **Dependabot version updates**.
+      `.github/dependabot.yml` asks for monthly grouped bumps of the SHA-pinned actions.
+- [ ] Watch the repo's Actions (or set a notification rule) so a red nightly reaches you. A red
+      nightly leaves the previous nightly in place, so failures are quiet otherwise.
+
+---
+
+## Phase 2: turning on Windows and macOS
+
+Do this per OS when you have the machine in front of you. Full detail is in
+[RELEASING.md § Turning on Windows and macOS](RELEASING.md).
+
+1. On the Windows PC (Git Bash) or the Mac:
+   - one-time toolchain setup from `docs/BUILDING.md` (Rust, Node and pnpm; on Windows the VS Build
+     Tools C++ workload; on macOS the Xcode Command Line Tools);
+   - then `tools/build.sh --release-target windows-x64`, `macos-arm64` or `macos-x64`.
+2. Install the installer from `dist/<target>/`, then Set up → Pair on that machine.
+3. Optional: one CI trial with Actions → build → **Run workflow** → `only: windows-x64`. This is
+   artifacts only, never published. About $0.12 for Windows, $0.74 per macOS target.
+4. Set `"enabled": true` for that target in `.github/build-targets.json`, and update the
+   `only_linux_is_enabled…` test in the same commit. From the next push, nightlies include it.
+5. **Before enabling macOS, decide the nightly cadence.** Per-push nightlies with macOS on cost
+   about $1.75 per push, against $0.14 Linux-only. Either:
+   - point the macOS targets' `runner` at the Mac mini's self-hosted labels; or
+   - change the nightly trigger to a daily `schedule:`.
+
+   I can make either change when you're ready.
+
+## Later
+
+| When | What |
+|---|---|
+| Apple Developer ID exists | add the six `APPLE_*` repo secrets. The workflow already passes them through and signs and notarizes when present ([RELEASING.md § Signing](RELEASING.md)) |
+| Windows certificate exists | add `bundle.windows.signCommand` + its secrets |
+| The repo goes public | nightly links work without a login, and self-hosted runners (the Mac mini) must then be restricted to `main`/tags only, never PRs |
 
 ## If something goes wrong
 
-- **A tag build fails partway:** fix it, then re-run the failed jobs on the same tag's run. The
-  release job replaces the draft's assets rather than failing on "already exists".
+- **A nightly failed part-way:** the previous nightly is untouched. Fix it, and the next push to
+  `main` publishes. Or re-run the failed jobs on the same run.
+- **A tag build failed:** fix it, then re-run the failed jobs on the tag's run. The release job
+  replaces the draft's assets.
 - **The wrong thing got tagged:** delete the draft release and the tag
-  (`git push origin :refs/tags/v0.1.0`). Nothing was public, because releases start as drafts.
-- **Everything on one OS is red after a runner image update:** pin that target's `runner` to the
-  previous image label in `.github/build-targets.json` while investigating.
+  (`git push origin :refs/tags/v0.1.0`). Nothing was public.
+- **To pause nightlies without touching code:** Actions → build → ⋯ → **Disable workflow**. This
+  also stops PR builds. Re-enable when done.

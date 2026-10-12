@@ -30,9 +30,11 @@ tools/build.sh            # .deb + .AppImage in src-tauri/target/release/bundle/
 tools/check.sh            # the merge gate
 ```
 
-Release installers for all five targets (Linux x64/arm64, Windows x64, macOS arm64/x64) are built
-by GitHub Actions (`.github/workflows/build.yml`) on a `v*.*.*` tag. See
-[docs/RELEASING.md](docs/RELEASING.md).
+Installers are built by GitHub Actions (`.github/workflows/build.yml`). Linux x64 and arm64 build
+today; Windows and macOS are declared and switch on once proven locally. Every push to `main`
+updates the **nightly** prerelease, and a `v*.*.*` tag makes a draft release. See
+[docs/RELEASING.md](docs/RELEASING.md). To build any target the way CI does:
+`tools/build.sh --release-target <target>`.
 
 ## Layout
 
