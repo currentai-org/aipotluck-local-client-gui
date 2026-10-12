@@ -1,30 +1,36 @@
-# Build the GUI's installers for every target in .github/build-targets.json, and -- on a version tag
-# -- publish them to a GitHub Release (as a DRAFT, so a person looks before anyone can download).
+# Build the GUI's installers for the ENABLED targets in .github/build-targets.json, and publish them.
 #
-#   push a tag v<version>   build all targets, create a draft release with every installer
-#   workflow_dispatch       build all targets (or one, via the `only` input), upload as artifacts
-#   pull_request            build all targets, artifacts only, to catch a broken bundle before merge
+#   pull_request              build, upload as workflow artifacts only (catch a broken bundle pre-merge)
+#   push to main              build, then update the rolling `nightly` PRERELEASE: the `nightly` tag is
+#                             moved to this commit and its assets replaced. Stable download URLs:
+#                             https://github.com/<repo>/releases/download/nightly/<file>
+#   push a tag v<version>     build, then create a DRAFT release (a person reviews, then publishes)
+#   workflow_dispatch         build; `only` picks one target -- even a DISABLED one -- so a new
+#                             platform can be tried in CI without enabling it for every push
+#
+# Only enabled targets build by default (Linux today). Windows and macOS are declared but disabled
+# until they've been proven locally with `tools/build.sh --release-target <t>`; then flip
+# "enabled" in .github/build-targets.json. See docs/RELEASING.md.
 #
 # GPU support is not a build dimension: one binary per OS x CPU arch covers CUDA/Metal/Vulkan/ROCm,
 # because the bundled CLI downloads the matching llama.cpp asset on the user's machine at setup.
 #
-# Every third-party action is pinned to a full commit SHA (tag in the trailing comment). Bump them
-# deliberately; dependabot can do it (see .github/dependabot.yml).
-#
-# Builds are UNSIGNED until signing secrets exist -- see docs/RELEASING.md. macOS will show a
-# Gatekeeper warning and Windows a SmartScreen prompt for unsigned installers.
+# Every third-party action is pinned to a full commit SHA (tag in the trailing comment); dependabot
+# keeps them current. Builds are UNSIGNED until signing secrets exist (docs/RELEASING.md).
 
 name: build
 
 on:
   push:
+    branches: [main]
     tags: ['v*.*.*']
+    paths-ignore: ['docs/**', '**.md']
   pull_request:
     paths-ignore: ['docs/**', '**.md']
   workflow_dispatch:
     inputs:
       only:
-        description: 'Build just this target (e.g. linux-x64); empty = all'
+        description: 'Build just this target, even if disabled (e.g. windows-x64); empty = all enabled'
         required: false
         default: ''
 
@@ -32,8 +38,10 @@ permissions:
   contents: read
 
 concurrency:
+  # One nightly publish at a time, and a newer push to main supersedes an older one still running:
+  # the nightly should always be the tip, never an older commit that happened to finish last.
   group: build-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
 
 jobs:
   plan:
@@ -43,29 +51,41 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
       version: ${{ steps.version.outputs.version }}
+      label: ${{ steps.version.outputs.label }}
+      channel: ${{ steps.version.outputs.channel }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Fails in seconds, before a 30-minute matrix, if the tag and the app disagree.
-      - name: Check the version
+      # Fails in seconds, before the matrix, if a tag and the app disagree. The label is what the
+      # installer file names carry: the version for a release, version-nightly.DATE.SHA otherwise.
+      - name: Version and channel
         id: version
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             v=$(python3 tools/release_version.py --tag "${GITHUB_REF_NAME}")
+            label="$v"; channel=release
           else
             v=$(python3 tools/release_version.py --check)
+            label="${v}-nightly.$(date -u +%Y%m%d).${GITHUB_SHA::7}"
+            if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+              channel=nightly
+            else
+              channel=none
+            fi
           fi
-          echo "version=$v" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$v"
+            echo "label=$label"
+            echo "channel=$channel"
+          } >> "$GITHUB_OUTPUT"
+          echo "version $v, label $label, channel $channel"
 
       - name: Build matrix
         id: matrix
         env:
           ONLY: ${{ inputs.only }}
         run: |
-          m=$(python3 tools/release_version.py --matrix)
-          if [ -n "${ONLY}" ]; then
-            m=$(python3 -c 'import json,sys; m=json.loads(sys.argv[1]); m["include"]=[t for t in m["include"] if t["target"]==sys.argv[2]]; assert m["include"], "no such target: "+sys.argv[2]; print(json.dumps(m,separators=(",",":")))' "$m" "${ONLY}")
-          fi
+          m=$(python3 tools/release_version.py --matrix --only "${ONLY}")
           echo "matrix=$m" >> "$GITHUB_OUTPUT"
           echo "$m"
 
@@ -148,7 +168,9 @@ jobs:
           tauri build --ci --target "${{ matrix.rust_target }}" --bundles "${{ matrix.bundles }}"
 
       - name: Collect installers
-        run: tools/collect-bundles.sh "${{ matrix.target }}" --rust-target "${{ matrix.rust_target }}" --out dist
+        run: |
+          tools/collect-bundles.sh "${{ matrix.target }}" --rust-target "${{ matrix.rust_target }}" \
+            --out dist --label "${{ needs.plan.outputs.label }}"
 
       - name: Linux glibc floor
         if: runner.os == 'Linux'
@@ -165,10 +187,39 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # Every push to main: replace the assets of the rolling `nightly` prerelease and move its tag to
+  # this commit. Runs only if EVERY enabled target built -- a half-built nightly is worse than
+  # yesterday's whole one, which stays in place when anything fails.
+  nightly:
+    name: Publish nightly
+    needs: [plan, build]
+    if: needs.plan.outputs.channel == 'nightly'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    concurrency:
+      group: nightly-publish
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: installers-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LABEL: ${{ needs.plan.outputs.label }}
+        run: tools/publish-nightly.sh dist "$LABEL"
+
   release:
     name: Draft release
     needs: [plan, build]
-    if: github.ref_type == 'tag'
+    if: needs.plan.outputs.channel == 'release'
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     permissions:

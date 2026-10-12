@@ -3,26 +3,30 @@
 # in every file name, plus a SHA256SUMS file. Same script locally and in CI, so a release's assets
 # are named the same way no matter where they were built.
 #
-#   tools/collect-bundles.sh <target> [--rust-target TRIPLE] [--out DIR]
+#   tools/collect-bundles.sh <target> [--rust-target TRIPLE] [--out DIR] [--label LABEL]
 #
 #   <target>        linux-x64 | linux-arm64 | windows-x64 | macos-arm64 | macos-x64
 #   --rust-target   the triple passed to `tauri build --target` (bundles then live under
 #                   src-tauri/target/<triple>/release/bundle); omit for a host build
 #   --out           default dist/<target>
+#   --label         what goes in the file name instead of the app version, e.g.
+#                   0.1.0-nightly.20261010.2cbd67a, so a nightly download names itself
 #
 # Exit 1 if no installer was found -- a green build step that bundled nothing must not look like
 # a release.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGET="${1:?usage: collect-bundles.sh <target> [--rust-target TRIPLE] [--out DIR]}"; shift
-RUST_TARGET="" OUT=""
+TARGET="${1:?usage: collect-bundles.sh <target> [--rust-target TRIPLE] [--out DIR] [--label LABEL]}"; shift
+RUST_TARGET="" OUT="" LABEL=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --rust-target) RUST_TARGET="${2:?}"; shift 2 ;;
     --out) OUT="${2:?}"; shift 2 ;;
+    --label) LABEL="${2:?}"; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+case "$LABEL" in *[!0-9A-Za-z.+-]*) echo "--label may only contain [0-9A-Za-z.+-]: $LABEL" >&2; exit 2 ;; esac
 OUT="${OUT:-$ROOT/dist/$TARGET}"
 if [ -n "$RUST_TARGET" ]; then
   BUNDLE="$ROOT/src-tauri/target/$RUST_TARGET/release/bundle"
@@ -31,7 +35,7 @@ else
 fi
 [ -d "$BUNDLE" ] || { echo "no bundle directory at $BUNDLE" >&2; exit 1; }
 
-VERSION="$(cd "$ROOT" && (python3 tools/release_version.py 2>/dev/null || python tools/release_version.py))"
+VERSION="${LABEL:-$(cd "$ROOT" && (python3 tools/release_version.py 2>/dev/null || python tools/release_version.py) | tr -d '\r')}"
 NAME="aipotluck-local-client-gui"
 mkdir -p "$OUT"
 rm -f "$OUT"/*
