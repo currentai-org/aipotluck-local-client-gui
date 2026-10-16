@@ -1,0 +1,45 @@
+{
+  "_comment": "The release build matrix. One GUI binary per OS x CPU architecture: GPU support (CUDA, Metal, Vulkan, ROCm) is not a build dimension, because the bundled CLI downloads the matching llama.cpp asset on the user's machine at setup time. A target belongs here only if the bundled Python (runtime/python_version.json) and upstream's newt pin both have an asset for it -- tests/test_build_targets.py enforces that. 'enabled' decides whether CI builds it on PRs, pushes to main (nightly) and tags; a disabled target is still buildable on demand (workflow_dispatch with `only`) and locally (tools/build.sh --release-target). 'runner' is a GitHub-hosted label, or a list of self-hosted labels. 'bundles' is passed to `tauri build --bundles`.",
+  "targets": [
+    {
+      "target": "linux-x64",
+      "enabled": true,
+      "runner": "ubuntu-22.04",
+      "rust_target": "x86_64-unknown-linux-gnu",
+      "bundles": "deb,appimage",
+      "priority": "must"
+    },
+    {
+      "target": "linux-arm64",
+      "enabled": true,
+      "runner": "ubuntu-22.04-arm",
+      "rust_target": "aarch64-unknown-linux-gnu",
+      "bundles": "deb,appimage",
+      "priority": "nice"
+    },
+    {
+      "target": "windows-x64",
+      "enabled": false,
+      "runner": "windows-2022",
+      "rust_target": "x86_64-pc-windows-msvc",
+      "bundles": "nsis,msi",
+      "priority": "must"
+    },
+    {
+      "target": "macos-arm64",
+      "enabled": false,
+      "runner": "macos-15",
+      "rust_target": "aarch64-apple-darwin",
+      "bundles": "app,dmg",
+      "priority": "must"
+    },
+    {
+      "target": "macos-x64",
+      "enabled": false,
+      "runner": "macos-15",
+      "rust_target": "x86_64-apple-darwin",
+      "bundles": "app,dmg",
+      "priority": "optional"
+    }
+  ]
+}

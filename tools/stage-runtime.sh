@@ -42,9 +42,18 @@ while [ $# -gt 0 ]; do
 done
 
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
-json_get() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); 
+# Windows runners (Git Bash) ship `python`, not `python3`; a Windows Store stub may answer to
+# `python3` without being a real interpreter, so check that it actually runs.
+PY3=""
+for cand in python3 python; do
+  if command -v "$cand" >/dev/null 2>&1 && "$cand" -c 'import sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
+    PY3="$cand"; break
+  fi
+done
+[ -n "$PY3" ] || { echo "need a Python 3.8+ interpreter on PATH (python3 or python) to read the pins" >&2; exit 2; }
+json_get() { "$PY3" -c 'import json,sys; d=json.load(open(sys.argv[1])); 
 for k in sys.argv[2].split("."): d=d[k]
-print(d)' "$1" "$2"; }
+print(d)' "$1" "$2" | tr -d '\r'; }
 
 [ -f "$UPSTREAM/aipotluck/installer/install.py" ] || {
   echo "upstream submodule missing -- run: git submodule update --init upstream/aitpotluck-local-client" >&2; exit 2; }
