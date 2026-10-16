@@ -251,18 +251,27 @@ def main() -> int:
             "pairing temp file was not cleaned up"
         steps.append("paired via upstream `cli login`; temp credentials file removed")
 
-        page = wd.wait_for("Inference server", 60, "5-status")
+        # One combined status light; each component's own line is in the card's data-detail
+        # (also its hover tooltip). With the fake pairing the connection can never come up, so
+        # once the server is Ready the light must be red and its one line must blame the connection.
+        wd.wait_for("Status", 60, "5-status")
+        detail = lambda: wd.js("const c = document.querySelector('.card.status'); return c ? c.dataset.detail : ''") or ""
         end = time.time() + 240
-        while time.time() < end and ("Ready" not in page or "Can’t reach" not in page and "Can't reach" not in page):
-            time.sleep(3); page = wd.text()
+        while time.time() < end and not ("Inference server: Ready" in detail() and "reach AI Potluck" in detail()):
+            time.sleep(3)
+        page = wd.text(); d = detail()
+        light = wd.js("const l = document.querySelector('.card.status .light'); return l ? l.className : ''")
+        line = wd.js("const t = document.querySelector('.card.status .status-text'); return t ? t.innerText : ''")
         wd.shot("5-running")
-        assert "Running while this window is open" in page, (
+        assert "Service: Running while this window is open" in d, (
             f"the app is not talking to the service it hosts on the test port -- is something else "
-            f"answering there?\n{page}")
-        assert "Ready" in page, f"inference server never reported Ready:\n{page}"
-        assert "reach AI Potluck" in page, f"fake tunnel was not reported as unreachable:\n{page}"
-        assert FAKE_PAIRING["tunnelSecret"] not in page
-        steps.append("status: inference server Ready, fake tunnel honestly reported as not connected")
+            f"answering there?\n{d}")
+        assert "Inference server: Ready" in d, f"inference server never reported Ready:\n{d}"
+        assert "reach AI Potluck" in d, f"fake tunnel was not reported as unreachable:\n{d}"
+        assert "bad" in light.split(), f"one component is red, so the combined light must be red, got {light!r}"
+        assert line.startswith("Connection:") and "\n" not in line, f"the status line must name the red component, on one line: {line!r}"
+        assert FAKE_PAIRING["tunnelSecret"] not in page and FAKE_PAIRING["tunnelSecret"] not in d
+        steps.append(f"status: one red light, '{line}'; server Ready underneath")
 
         if not args.skip_models:
             installed = model or page_model_default(home)
@@ -299,7 +308,8 @@ def main() -> int:
                 time.sleep(2)
             wd.shot("6-benchmarked")
             if "Benchmark finished" in page:
-                assert "Not measured yet" not in page, f"a model is still unmeasured after the benchmark:\n{page}"
+                titles = wd.js("return [...document.querySelectorAll('.model-score')].map(e => e.title).join('\\n')") or ""
+                assert "Not measured yet" not in titles, f"a model is still unmeasured after the benchmark:\n{titles}"
                 steps.append(f"benchmarked both through POST /models/benchmark in {time.time() - t0:.0f}s; both scored")
             else:
                 # Upstream declines to measure a busy machine rather than record a wrong score (on a
