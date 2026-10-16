@@ -11,6 +11,7 @@
 		progressCaption,
 		screenFor,
 		statusRows,
+		combinedStatus,
 		type AppState,
 		type InstallPlan,
 		type Status
@@ -38,6 +39,7 @@
 	const screen = $derived(screenFor(app));
 	const busy = $derived(app && app.ready ? app.busy : null);
 	const rows = $derived(app && app.ready ? statusRows(app, status) : []);
+	const summary = $derived(combinedStatus(rows, !!(app && app.ready && app.hosted_by_gui)));
 	const planPending = $derived(planFor !== modelHf);
 	const items = $derived(plan ? planItems(plan, planPending ? modelHf : null) : []);
 	const total = $derived(planTotal(items));
@@ -266,14 +268,12 @@
 			<p class="label">This computer</p>
 			<h1>Sharing with AI Potluck</h1>
 		</div>
-		<div class="card">
-			{#each rows as r (r.label)}
-				<div class="status-row">
-					<span class="light {r.light}" aria-hidden="true"></span>
-					<span class="status-label">{r.label}</span>
-					<span class="status-text">{r.text}</span>
-				</div>
-			{/each}
+		<div class="card status" title={summary.detail} data-detail={summary.detail} role="status" aria-label={`Status: ${summary.text}`}>
+			<div class="status-row">
+				<span class="light {summary.light}" aria-hidden="true"></span>
+				<span class="status-label">Status</span>
+				<span class="status-text one-line">{summary.text}</span>
+			</div>
 		</div>
 		<Models serviceHealthy={app.service_healthy} disabled={!!busy} />
 		{#if status?.runtime_config?.llama_cpp?.tag}

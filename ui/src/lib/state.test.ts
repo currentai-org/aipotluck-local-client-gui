@@ -8,6 +8,8 @@ import {
 	progressCaption,
 	screenFor,
 	statusRows,
+	combinedStatus,
+	type Row,
 	type AppState,
 	type InstallPlan,
 	type Probe
@@ -71,6 +73,72 @@ describe('statusRows', () => {
 	});
 	it('says the service only lives as long as the window when the GUI is hosting it', () => {
 		expect(statusRows(app({}, { hosted_by_gui: true }), null)[0].text).toMatch(/window is open/);
+	});
+});
+
+describe('combinedStatus', () => {
+	const ok = (label: string, text = 'fine'): Row => ({ label, light: 'ok', text });
+	const all = (...over: Row[]): Row[] => {
+		const base = [ok('Service', 'Running in the background'), ok('Inference server', 'Ready'), ok('Connection to AI Potluck', 'Connected')];
+		return base.map((r) => over.find((o) => o.label === r.label) ?? r);
+	};
+
+	it('all three healthy is one green light, "All running"', () => {
+		expect(combinedStatus(all())).toMatchObject({ light: 'ok', text: 'All running' });
+	});
+
+	it('one yellow component turns the light yellow and names it', () => {
+		const c = combinedStatus(all({ label: 'Connection to AI Potluck', light: 'wait', text: 'Connecting…' }));
+		expect(c).toMatchObject({ light: 'wait', text: 'Connection: connecting…' });
+	});
+
+	it('red beats yellow, and the line names the red one, not the yellow one', () => {
+		const c = combinedStatus(
+			all(
+				{ label: 'Inference server', light: 'wait', text: 'Starting…' },
+				{ label: 'Connection to AI Potluck', light: 'bad', text: 'Can’t reach AI Potluck — retrying' }
+			)
+		);
+		expect(c.light).toBe('bad');
+		expect(c.text).toBe('Connection: can’t reach AI Potluck — retrying');
+	});
+
+	it('several components at the worst level are all named, in one line', () => {
+		const c = combinedStatus(
+			all({ label: 'Service', light: 'bad', text: 'Not responding' }, { label: 'Inference server', light: 'bad', text: 'Not started' })
+		);
+		expect(c).toMatchObject({ light: 'bad', text: 'Service and Inference server need attention' });
+		expect(c.text).not.toContain('\n');
+	});
+
+	it('a component that has not reported (off) never reads as green', () => {
+		expect(combinedStatus(all({ label: 'Inference server', light: 'off', text: 'Stopped until paired' })).light).toBe('wait');
+		expect(combinedStatus([]).light).toBe('wait');
+	});
+
+	it('keeps every component’s own line for the tooltip, so nothing the three rows said is lost', () => {
+		const c = combinedStatus(all({ label: 'Connection to AI Potluck', light: 'bad', text: 'Can’t reach AI Potluck — retrying' }));
+		expect(c.detail.split('\n')).toEqual([
+			'Service: Running in the background',
+			'Inference server: Ready',
+			'Connection to AI Potluck: Can’t reach AI Potluck — retrying'
+		]);
+	});
+
+	it('still says when the service only lives as long as the window', () => {
+		expect(combinedStatus(all(), true).text).toMatch(/window closes/);
+	});
+
+	it('works end to end from what upstream reports', () => {
+		const c = combinedStatus(
+			statusRows(app({}, { hosted_by_gui: true }), {
+				logged_in: true,
+				llama_server: { running: true, healthy: true },
+				tunnel: { running: true, tunnel_connected: false }
+			}),
+			true
+		);
+		expect(c).toMatchObject({ light: 'bad', text: 'Connection: can’t reach AI Potluck — retrying' });
 	});
 });
 
