@@ -100,23 +100,31 @@ export type ModelRow = {
 	repo: string;
 	owner: string;
 	quant: string | null;
+	/** The context window as a tag ("8K ctx"), or null when the model isn't sized yet. */
+	ctx: string | null;
 	/** LocalScore, formatted with its band ("39 (poor)"), or null when not measured. */
 	score: string | null;
-	facts: string[];
+	/** Hover text on the name: who publishes it, and the full id. */
+	nameTitle: string;
+	/** Hover text on the score: speed, plus every note (not measured, low confidence, held back...). */
+	scoreTitle: string;
+	/** True when a note needs attention (held back, stale score), so the row can flag it on one line. */
+	warn: boolean;
 	notes: Note[];
 };
 
-function contextLabel(ctx: number): string {
-	return ctx >= 1024 && ctx % 1024 === 0 ? `${ctx / 1024}K context` : `${ctx.toLocaleString('en-US')} context`;
+function contextTag(ctx: number): string {
+	return ctx >= 1024 && ctx % 1024 === 0 ? `${ctx / 1024}K ctx` : `${ctx.toLocaleString('en-US')} ctx`;
 }
 
 /**
- * One row per model, carrying what the CLI's `list` prints: the score, its band and generation
- * speed, and the same notes (held back, not sized, not measured, stale, low confidence).
+ * One single-line row per model. The row itself shows the name, quant and context tags, and the
+ * score. Everything else the CLI's `list` prints (publisher, speed, and its notes: held back, not
+ * sized, not measured, stale, low confidence) moves into hover text, with a warning flag on the
+ * row when a note needs attention.
  */
 export function modelRow(m: ModelEntry): ModelRow {
 	const { owner, repo, quant } = splitModelId(m.id);
-	const facts: string[] = [];
 	const notes: Note[] = [];
 	if (m.held_back) {
 		notes.push({
@@ -126,22 +134,24 @@ export function modelRow(m: ModelEntry): ModelRow {
 	}
 	if (!m.sized) notes.push({ text: 'Not sized for this computer yet' });
 	const s = m.score;
+	const speed = s && typeof s.avg_gen_tps === 'number' ? `${s.avg_gen_tps.toFixed(1)} tok/s` : null;
 	if (s) {
-		if (typeof s.avg_gen_tps === 'number') facts.push(`${s.avg_gen_tps.toFixed(1)} tok/s`);
 		if (s.confidence === 'low') notes.push({ text: 'Low confidence: this computer’s speed varied between runs' });
 		if (m.stale) notes.push({ text: 'Score is out of date; run a benchmark', warn: true });
 	} else if (!m.held_back) {
 		// Not for a held-back model: measuring is usually what held it back (the CLI says the same).
 		notes.push({ text: 'Not measured yet; run a benchmark' });
 	}
-	if (m.ctx_size) facts.push(contextLabel(m.ctx_size));
 	return {
 		id: m.id,
 		repo,
 		owner,
 		quant,
+		ctx: m.ctx_size ? contextTag(m.ctx_size) : null,
 		score: s ? `${Math.round(s.localscore).toLocaleString('en-US')}${s.band ? ` (${s.band})` : ''}` : null,
-		facts,
+		nameTitle: owner ? `${m.id}\nPublished by ${owner}` : m.id,
+		scoreTitle: [speed, ...notes.map((n) => n.text)].filter(Boolean).join('\n'),
+		warn: notes.some((n) => n.warn),
 		notes
 	};
 }

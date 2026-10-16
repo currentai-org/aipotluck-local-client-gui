@@ -78,17 +78,37 @@ describe('modelRow', () => {
 		expect(splitModelId('org/repo').quant).toBeNull();
 	});
 
-	it('a measured model shows its LocalScore, band and speed, like the CLI list', () => {
+	it('a measured model shows its LocalScore and band, with its speed in the score’s hover text', () => {
 		const r = modelRow(entry({ score: { localscore: 1312.4, band: 'excellent', avg_gen_tps: 41.234 } }));
 		expect(r.score).toBe('1,312 (excellent)');
-		expect(r.facts).toEqual(['41.2 tok/s', '32K context']);
+		expect(r.scoreTitle).toBe('41.2 tok/s');
 		expect(r.notes).toEqual([]);
+		expect(r.warn).toBe(false);
 	});
 
-	it('an unmeasured model has no score and says how to get one', () => {
+	it('the context window is a tag, like the quant', () => {
+		expect(modelRow(entry()).ctx).toBe('32K ctx');
+		expect(modelRow(entry({ ctx_size: 3000 })).ctx).toBe('3,000 ctx');
+		expect(modelRow(entry({ ctx_size: null })).ctx).toBeNull();
+	});
+
+	it('the publisher moves into the name’s hover text, with the full id', () => {
+		expect(modelRow(entry()).nameTitle).toBe('bartowski/Qwen2.5-0.5B-Instruct-GGUF:Q4_K_M\nPublished by bartowski');
+	});
+
+	it('an unmeasured model has no score, and its hover text says how to get one', () => {
 		const r = modelRow(entry());
 		expect(r.score).toBeNull();
 		expect(r.notes.map((n) => n.text)).toEqual(['Not measured yet; run a benchmark']);
+		expect(r.scoreTitle).toBe('Not measured yet; run a benchmark');
+	});
+
+	it('a note that needs attention flags the one-line row instead of adding a line', () => {
+		const held = modelRow(entry({ held_back: { quarantine_reason: 'ran out of memory 3 times' } }));
+		expect(held.warn).toBe(true);
+		expect(held.scoreTitle).toContain('ran out of memory 3 times');
+		expect(modelRow(entry({ stale: true, score: { localscore: 300 } })).warn).toBe(true);
+		expect(modelRow(entry({ score: { localscore: 300, confidence: 'low' } })).warn).toBe(false);
 	});
 
 	it('a held back model is flagged with upstream’s reason and is not sent round the benchmark loop', () => {

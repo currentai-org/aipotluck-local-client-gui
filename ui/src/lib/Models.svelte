@@ -176,9 +176,13 @@
 				<div class="model" class:dim={deleting === row.id}>
 					<div class="model-line">
 						<span class="model-name">
-							{row.repo}{#if row.quant}<span class="quant mono">{row.quant}</span>{/if}
+							<span class="repo" title={row.nameTitle}>{row.repo}</span>
+							{#if row.quant}<span class="tag mono">{row.quant}</span>{/if}
+							{#if row.ctx}<span class="tag mono">{row.ctx}</span>{/if}
 						</span>
-						<span class="model-score mono">{row.score ?? '—'}</span>
+						<span class="model-score mono" title={row.scoreTitle || undefined} aria-label={row.scoreTitle ? `LocalScore ${row.score ?? 'not measured'}. ${row.scoreTitle}` : undefined}>
+							{#if row.warn}<Icon name="error-warning-line" size={14} />{/if}{row.score ?? '—'}
+						</span>
 						<button
 							class="btn destructive icon"
 							aria-label={`Remove ${row.id}`}
@@ -189,12 +193,6 @@
 							<Icon name="delete-bin-line" />
 						</button>
 					</div>
-					<p class="model-meta small mono">{[row.owner, ...row.facts].filter(Boolean).join(' · ')}</p>
-					{#each row.notes as n (n.text)}
-						<p class="model-note small" class:warn={n.warn}>
-							{#if n.warn}<Icon name="error-warning-line" size={14} />{/if}{n.text}
-						</p>
-					{/each}
 					{#if confirming === row.id}
 						<div class="confirm">
 							<p class="small">Delete {modelName(row.id)} and its downloaded weights from this computer?</p>
@@ -320,7 +318,7 @@
 		justify-content: space-between;
 	}
 	.models {
-		gap: var(--ds-space-4);
+		gap: var(--ds-space-2);
 	}
 	.model-cols,
 	.model-line {
@@ -329,26 +327,31 @@
 		gap: var(--ds-space-3);
 		align-items: center;
 	}
+	/* One line per model, no dividers: the name cuts with an ellipsis rather than wrap, and the
+	   publisher, speed and notes live in hover text (modelRow's nameTitle / scoreTitle). */
 	.model {
 		display: flex;
 		flex-direction: column;
 		gap: var(--ds-space-1);
-		padding-top: var(--ds-space-3);
-		border-top: var(--ds-border-hairline) solid var(--ds-line-2);
-	}
-	.model-cols + .model {
-		border-top: none;
-		padding-top: 0;
 	}
 	.model.dim {
 		opacity: 0.4;
 	}
 	.model-name {
+		display: flex;
+		align-items: center;
+		gap: var(--ds-space-2);
+		min-width: 0;
 		color: var(--ds-fg-1);
-		overflow-wrap: anywhere;
 	}
-	.quant {
-		margin-left: var(--ds-space-2);
+	.repo {
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+	.tag {
+		flex-shrink: 0;
 		padding: 0 var(--ds-space-1);
 		font-size: var(--ds-text-micro);
 		color: var(--ds-fg-2);
@@ -357,11 +360,16 @@
 		white-space: nowrap;
 	}
 	.model-score {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--ds-space-1);
 		color: var(--ds-fg-1);
 		font-size: var(--ds-text-small);
+		white-space: nowrap;
+		cursor: help;
 	}
-	.model-meta {
-		color: var(--ds-fg-3);
+	.model-score :global(svg) {
+		color: var(--ds-accent-2-text);
 	}
 	.model-note {
 		display: flex;
