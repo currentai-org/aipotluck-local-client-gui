@@ -12,7 +12,10 @@ FAILED=()
 step() { echo; echo "== $1"; }
 run() { local name="$1"; shift; step "$name"; "$@" || FAILED+=("$name"); }
 
-[ -f src-tauri/resources/runtime/manifest.json ] || run "stage runtime" tools/stage-runtime.sh
+# Always restage for THIS host: a `tools/build.sh --release-target <other arch>` leaves that
+# target's interpreter staged (e.g. macos-x64 on Apple silicon: "Bad CPU type in executable").
+# Cached by checksum, so this is a few seconds.
+run "stage runtime (host)" tools/stage-runtime.sh
 
 PY="$(tools/bundled-python.sh --with-pytest)" || { echo "bundled python unavailable"; exit 2; }
 run "conformance: extract upstream surface" python3 tools/conformance/extract_surface.py \

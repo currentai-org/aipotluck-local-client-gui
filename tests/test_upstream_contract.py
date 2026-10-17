@@ -57,6 +57,20 @@ def _get(url: str, timeout: float = 2.0):
         return r.status, r.read()
 
 
+def _cfg(home: Path) -> Path:
+    """Where upstream keeps runtime.json for a user install on this OS (aipotluck/installer/layout.py),
+    written out independently here so the probe is checked against it rather than against itself."""
+    if sys.platform == "darwin":
+        return home / "Library" / "Application Support" / "aipotluck" / "config"
+    return home / ".config" / "aipotluck"
+
+
+def _logs(home: Path) -> Path:
+    if sys.platform == "darwin":
+        return home / "Library" / "Logs" / "aipotluck"
+    return home / ".local" / "state" / "aipotluck" / "logs"
+
+
 @pytest.fixture
 def home(tmp_path: Path) -> Path:
     h = tmp_path / "home"
@@ -77,12 +91,13 @@ def test_probe_reports_upstreams_own_layout_and_a_fresh_machine_as_not_installed
     assert probe["installed"] is False
     assert probe["logged_in"] is False
     # The probe must place runtime.json exactly where upstream's own CLI reads it from.
-    assert probe["runtime_json"] == str(home / ".config" / "aipotluck" / "runtime.json")
-    assert probe["service_manager_usable"] is False  # no systemctl on PATH in this test
+    assert probe["runtime_json"] == str(_cfg(home) / "runtime.json")
+    # Linux: no systemctl on PATH in this test. macOS: launchd is always there (upstream assumes so).
+    assert probe["service_manager_usable"] is (sys.platform == "darwin")
 
 
 def test_probe_sees_an_install_only_when_the_llama_server_binary_really_exists(home: Path):
-    cfg = home / ".config" / "aipotluck"
+    cfg = _cfg(home)
     cfg.mkdir(parents=True)
     fake = home / "llama-server"
     (cfg / "runtime.json").write_text(json.dumps({"llama_cpp": {"server_binary": str(fake)}, "logged_in": True}))
@@ -114,7 +129,7 @@ def test_pairing_file_the_gui_writes_is_accepted_by_upstreams_own_parser(tmp_pat
 
 
 def test_login_with_a_bad_pairing_file_fails_loudly_and_leaves_the_device_unpaired(home: Path, tmp_path: Path):
-    cfg = home / ".config" / "aipotluck"
+    cfg = _cfg(home)
     cfg.mkdir(parents=True)
     (cfg / "runtime.json").write_text(json.dumps({"llama_cpp": {}, "logged_in": False}))
     creds = tmp_path / "pairing.json"
@@ -125,7 +140,7 @@ def test_login_with_a_bad_pairing_file_fails_loudly_and_leaves_the_device_unpair
 
 
 def test_logout_via_upstream_cli_clears_pairing_the_way_unpair_expects(home: Path):
-    cfg = home / ".config" / "aipotluck"
+    cfg = _cfg(home)
     cfg.mkdir(parents=True)
     (cfg / "runtime.json").write_text(json.dumps({
         "llama_cpp": {}, "logged_in": True,
@@ -141,8 +156,8 @@ def test_logout_via_upstream_cli_clears_pairing_the_way_unpair_expects(home: Pat
 @pytest.fixture
 def hosted_service(home: Path):
     """Upstream's service payload, started with the argv runtime.rs spawn_service uses."""
-    cfg = home / ".config" / "aipotluck"
-    logs = home / ".local" / "state" / "aipotluck" / "logs"
+    cfg = _cfg(home)
+    logs = _logs(home)
     cfg.mkdir(parents=True, exist_ok=True)
     (cfg / "runtime.json").write_text(json.dumps({"llama_cpp": {}, "logged_in": False}))
     port = _free_port()
