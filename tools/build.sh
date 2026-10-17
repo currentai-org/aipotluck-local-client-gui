@@ -33,6 +33,10 @@ if [ "${1:-}" = "--release-target" ]; then
   rustup target add "$TRIPLE" >/dev/null
   tools/stage-runtime.sh --target "$T"
   [ -d ui/node_modules ] || pnpm --dir ui install --frozen-lockfile
+  # GitHub runners set CI=true, and the macOS DMG bundler keys off it to skip its Finder
+  # AppleScript (window layout), which fails with error -10810 when there is no logged-in GUI
+  # session -- e.g. a build over SSH on the Mac mini. `--ci` alone does not set it.
+  export CI=true
   (cd src-tauri && cargo tauri build --ci --target "$TRIPLE" --bundles "$BUNDLES")
   tools/collect-bundles.sh "$T" --rust-target "$TRIPLE" --out "dist/$T"
   exit 0
