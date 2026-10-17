@@ -110,7 +110,11 @@ replaces the draft's assets instead of failing.
 ## Signing (not set up yet)
 
 Builds are **unsigned** today:
-- macOS: "can't be opened because Apple cannot check it" → right-click → Open.
+- macOS: the app is ad-hoc signed (so it runs on Apple silicon) but not with a Developer ID or
+  notarized. On first open from a downloaded `.dmg`, macOS says it "can't be opened because
+  Apple cannot check it". Since macOS 15, right-click → Open no longer bypasses this. Use
+  **System Settings → Privacy & Security → Open Anyway** (shown after the first attempt), or
+  `xattr -dr com.apple.quarantine /Applications/aipotluck-local-client-gui.app`.
 - Windows SmartScreen: "Windows protected your PC" → More info → Run anyway.
 
 `build.yml` already passes these secrets to the bundler when they exist, and stays unsigned when
