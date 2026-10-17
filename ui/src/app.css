@@ -220,6 +220,14 @@ p {
 	font-size: var(--ds-text-small);
 	line-height: var(--ds-leading-small);
 }
+/* Never more than one line: long upstream errors are cut with an ellipsis; the full text is the
+   card's hover tooltip. */
+.one-line {
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
 
 /* Paste target (fallback when the clipboard can't be read). */
 textarea.paste {

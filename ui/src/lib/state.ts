@@ -92,6 +92,45 @@ export function statusRows(app: AppState & { ready: true }, status: Status | nul
 	return rows;
 }
 
+/** The short names the combined status line uses for each component. */
+const SHORT: Record<string, string> = {
+	Service: 'Service',
+	'Inference server': 'Inference server',
+	'Connection to AI Potluck': 'Connection'
+};
+const SEVERITY: Record<Light, number> = { ok: 0, off: 1, wait: 1, bad: 2 };
+
+export type Combined = {
+	light: Light;
+	/** One short line: "All running", or which component is behind the light and why. */
+	text: string;
+	/** Every component's own line, for a tooltip, so nothing the three rows said is lost. */
+	detail: string;
+};
+
+/**
+ * One light for all of `statusRows`: the worst component wins (red over yellow over green), and
+ * the line under it names the component(s) responsible. A component that hasn't reported yet
+ * (`off`) counts as yellow, never green -- an unknown is not an OK.
+ */
+export function combinedStatus(rows: Row[], hostedByGui = false): Combined {
+	const detail = rows.map((r) => `${r.label}: ${r.text}`).join('\n');
+	if (!rows.length) return { light: 'wait', text: 'Checking…', detail };
+	const worst = Math.max(...rows.map((r) => SEVERITY[r.light]));
+	if (worst === 0) {
+		return { light: 'ok', text: hostedByGui ? 'All running · until this window closes' : 'All running', detail };
+	}
+	const light: Light = worst === 2 ? 'bad' : 'wait';
+	const culprits = rows.filter((r) => SEVERITY[r.light] === worst);
+	const names = culprits.map((r) => SHORT[r.label] ?? r.label);
+	if (culprits.length === 1) {
+		const t = culprits[0].text;
+		return { light, text: `${names[0]}: ${t.charAt(0).toLowerCase()}${t.slice(1)}`, detail };
+	}
+	const list = names.length === 2 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+	return { light, text: `${list} ${light === 'bad' ? 'need attention' : 'starting…'}`, detail };
+}
+
 /** Turn an upstream log line (`[LEVEL] logger.name: message`) into a short progress caption. */
 export function progressCaption(line: string): string | null {
 	const m = line.match(/^\[(DEBUG|INFO|WARNING|ERROR|CRITICAL)\] [\w.]+: (.*)$/);

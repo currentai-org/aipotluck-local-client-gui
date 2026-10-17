@@ -7,8 +7,9 @@
 	import { api } from './api';
 	import { isModelId, normaliseModelId } from './state';
 	import {
-		MEASURE_BUDGET_SECONDS,
 		activeJob,
+		batchOutcome,
+		benchmarkPlan,
 		canForceAdd,
 		downloadProgress,
 		elapsedSeconds,
@@ -31,7 +32,13 @@
 	let listing = $state<ModelListing | null>(null);
 	let listError = $state<string | null>(null);
 	let job = $state<Job | null>(null);
+	let jobs = $state<Job[]>([]);
+	// Ids of the per-model jobs one press of Benchmark queued; their outcome is reported once, together.
+	let batch = $state<string[]>([]);
 	let outcome = $state<Note | null>(null);
+	// Where the outcome line sits: under the control that caused it (the list for a removal, the
+	// Add field for a pull, the Benchmark button for a benchmark).
+	let outcomeAt = $state<'list' | 'add' | 'bench'>('bench');
 	let now = $state(Date.now());
 	let sizes = $state<Record<string, number | null>>({});
 
@@ -49,7 +56,10 @@
 	const locked = $derived(disabled || !!job || sending || !!deleting);
 	const stage = $derived(job ? jobStage(job, count) : '');
 	const expected = $derived(job?.model ? sizes[job.model] : null);
-	const hint = $derived(job ? jobHint(job, { downloadBytes: expected, modelCount: count }) : '');
+	// A queued id the last /jobs poll hasn't seen yet still counts as left: it was accepted (202).
+	const batchLeft = $derived(batch.filter((id) => !jobs.some((j) => j.id === id && (j.state === 'succeeded' || j.state === 'failed'))).length);
+	const hint = $derived(job ? jobHint(job, { downloadBytes: expected, modelCount: count, batchLeft }) : '');
+	const bench = $derived(benchmarkPlan(listing?.models ?? []));
 	const download = $derived(job ? downloadProgress(job, expected) : null);
 
 	async function loadModels() {
@@ -72,7 +82,6 @@
 
 	/** Follow the newest unfinished job, wherever it was started; note how it ended once it's done. */
 	async function loadJobs() {
-		let jobs: Job[] = [];
 		try {
 			const r = await api.service<{ jobs: Job[] }>('GET', '/jobs');
 			if (r.status !== 200) return;
@@ -86,9 +95,54 @@
 		if (previous && (!job || job.id !== previous.id)) {
 			const finished = jobs.find((j) => j.id === previous.id);
 			// List first, so the outcome line never sits above a list that doesn't reflect it yet.
+			// Each model's score appears as its own job finishes, even mid-batch.
 			await loadModels();
-			if (finished) outcome = jobOutcome(finished);
+			if (batch.includes(previous.id)) {
+				if (!batchLeft) {
+					outcome = batchOutcome(jobs.filter((j) => batch.includes(j.id)));
+					outcomeAt = 'bench';
+					batch = [];
+				}
+			} else if (finished) {
+				outcome = jobOutcome(finished);
+				outcomeAt = finished.kind === 'pull' ? 'add' : 'bench';
+			}
 		}
+	}
+
+	/**
+	 * Benchmark what's missing, one queued upstream job per model (POST /models/benchmark with a
+	 * "model"), or everything with one job when nothing is missing. Upstream runs its queue one job
+	 * at a time, so queuing them all at once measures them one after another, never two at once.
+	 */
+	async function benchmark() {
+		addError = null;
+		const { targets } = bench;
+		if (!targets) {
+			await submit('/models/benchmark', {});
+			return;
+		}
+		sending = true;
+		outcome = null;
+		batch = [];
+		const queued: string[] = [];
+		try {
+			for (const model of targets) {
+				const r = await api.service<{ job: Job }>('POST', '/models/benchmark', { model });
+				if (r.status !== 202) {
+					addError = errorMessage(r.body, `The service refused to benchmark ${model} (HTTP ${r.status}).`);
+					break;
+				}
+				queued.push(r.body.job.id);
+				batch = [...queued];
+				job ??= r.body.job;
+			}
+		} catch (e) {
+			addError = String(e);
+		} finally {
+			sending = false;
+		}
+		await loadJobs();
 	}
 
 	async function submit(path: '/models' | '/models/benchmark', body: Record<string, unknown>) {
@@ -129,7 +183,10 @@
 		deleteError = null;
 		try {
 			const r = await api.service('DELETE', `/models?model=${encodeURIComponent(id)}`);
-			if (r.status === 200) outcome = { text: `Removed ${modelName(id)}.` };
+			if (r.status === 200) {
+				outcome = { text: `Removed ${modelName(id)}.` };
+				outcomeAt = 'list';
+			}
 			else deleteError = errorMessage(r.body, `Couldn’t remove it (HTTP ${r.status}).`);
 		} catch (e) {
 			deleteError = String(e);
@@ -171,14 +228,18 @@
 			<div class="error" role="alert"><Icon name="error-warning-line" /><span>Couldn’t refresh the list: {listError}</span></div>
 		{/if}
 		{#if listing && rows.length}
-			<div class="model-cols label" aria-hidden="true"><span>Model</span><span>LocalScore</span><span></span></div>
+			<div class="model-cols label"><span>Model</span><span class="has-tip" title={localScoreExplainer()}>LocalScore</span><span></span></div>
 			{#each rows as row (row.id)}
 				<div class="model" class:dim={deleting === row.id}>
 					<div class="model-line">
 						<span class="model-name">
-							{row.repo}{#if row.quant}<span class="quant mono">{row.quant}</span>{/if}
+							<span class="repo" title={row.nameTitle}>{row.repo}</span>
+							{#if row.quant}<span class="tag mono">{row.quant}</span>{/if}
+							{#if row.ctx}<span class="tag mono">{row.ctx}</span>{/if}
 						</span>
-						<span class="model-score mono">{row.score ?? '—'}</span>
+						<span class="model-score mono" title={row.scoreTitle || undefined} aria-label={row.scoreTitle ? `LocalScore ${row.score ?? 'not measured'}. ${row.scoreTitle}` : undefined}>
+							{#if row.warn}<Icon name="error-warning-line" size={14} />{/if}{row.score ?? '—'}
+						</span>
 						<button
 							class="btn destructive icon"
 							aria-label={`Remove ${row.id}`}
@@ -189,12 +250,6 @@
 							<Icon name="delete-bin-line" />
 						</button>
 					</div>
-					<p class="model-meta small mono">{[row.owner, ...row.facts].filter(Boolean).join(' · ')}</p>
-					{#each row.notes as n (n.text)}
-						<p class="model-note small" class:warn={n.warn}>
-							{#if n.warn}<Icon name="error-warning-line" size={14} />{/if}{n.text}
-						</p>
-					{/each}
 					{#if confirming === row.id}
 						<div class="confirm">
 							<p class="small">Delete {modelName(row.id)} and its downloaded weights from this computer?</p>
@@ -222,9 +277,6 @@
 	</div>
 	{#if deleteError}
 		<div class="error" role="alert"><Icon name="error-warning-line" /><span>{deleteError}</span></div>
-	{/if}
-	{#if rows.some((r) => r.score)}
-		<p class="small faint">{localScoreExplainer()}</p>
 	{/if}
 
 	{#if job}
@@ -256,11 +308,10 @@
 				</details>
 			{/if}
 		</div>
-	{:else if outcome}
-		<p class="model-note small" class:warn={outcome.warn} class:positive={!outcome.warn} role="status">
-			<Icon name={outcome.warn ? 'error-warning-line' : 'checkbox-circle-fill'} size={14} />{outcome.text}
-		</p>
 	{/if}
+	{#if !job && outcome && outcomeAt === 'list'}{@render outcomeLine(outcome)}{/if}
+
+	<label class="small add-label" for="add-model">Add a new model:</label>
 
 	<form
 		class="add"
@@ -296,23 +347,28 @@
 			</div>
 		{/if}
 	{/if}
+	{#if !job && outcome && outcomeAt === 'add'}{@render outcomeLine(outcome)}{/if}
 
 	<div class="row">
 		<button
 			class="btn secondary"
 			disabled={locked || !count}
-			onclick={() => {
-				addError = null;
-				submit('/models/benchmark', {});
-			}}
+			onclick={benchmark}
 		>
-			<Icon name="dashboard-3-line" /> Benchmark
+			<Icon name="dashboard-3-line" /> {bench.label}
 		</button>
-		<p class="small faint">
-			{#if job}Available once the job above finishes.{:else}Measures every model, up to {Math.round(MEASURE_BUDGET_SECONDS / 60)} min each.{/if}
+		<p class="small faint one-line">
+			{#if job}Available once the job above finishes.{:else}{bench.hint}{/if}
 		</p>
 	</div>
+	{#if !job && outcome && outcomeAt === 'bench'}{@render outcomeLine(outcome)}{/if}
 </section>
+
+{#snippet outcomeLine(o: Note)}
+	<p class="model-note small" class:warn={o.warn} class:positive={!o.warn} role="status">
+		<Icon name={o.warn ? 'error-warning-line' : 'checkbox-circle-fill'} size={14} />{o.text}
+	</p>
+{/snippet}
 
 <style>
 	.models-head {
@@ -320,7 +376,7 @@
 		justify-content: space-between;
 	}
 	.models {
-		gap: var(--ds-space-4);
+		gap: var(--ds-space-2);
 	}
 	.model-cols,
 	.model-line {
@@ -329,26 +385,31 @@
 		gap: var(--ds-space-3);
 		align-items: center;
 	}
+	/* One line per model, no dividers: the name cuts with an ellipsis rather than wrap, and the
+	   publisher, speed and notes live in hover text (modelRow's nameTitle / scoreTitle). */
 	.model {
 		display: flex;
 		flex-direction: column;
 		gap: var(--ds-space-1);
-		padding-top: var(--ds-space-3);
-		border-top: var(--ds-border-hairline) solid var(--ds-line-2);
-	}
-	.model-cols + .model {
-		border-top: none;
-		padding-top: 0;
 	}
 	.model.dim {
 		opacity: 0.4;
 	}
 	.model-name {
+		display: flex;
+		align-items: center;
+		gap: var(--ds-space-2);
+		min-width: 0;
 		color: var(--ds-fg-1);
-		overflow-wrap: anywhere;
 	}
-	.quant {
-		margin-left: var(--ds-space-2);
+	.repo {
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+	.tag {
+		flex-shrink: 0;
 		padding: 0 var(--ds-space-1);
 		font-size: var(--ds-text-micro);
 		color: var(--ds-fg-2);
@@ -356,12 +417,20 @@
 		border-radius: var(--ds-radius-sharp);
 		white-space: nowrap;
 	}
+	.has-tip {
+		cursor: help;
+	}
 	.model-score {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--ds-space-1);
 		color: var(--ds-fg-1);
 		font-size: var(--ds-text-small);
+		white-space: nowrap;
+		cursor: help;
 	}
-	.model-meta {
-		color: var(--ds-fg-3);
+	.model-score :global(svg) {
+		color: var(--ds-accent-2-text);
 	}
 	.model-note {
 		display: flex;
@@ -411,6 +480,11 @@
 	}
 	.faint {
 		color: var(--ds-fg-3);
+	}
+	/* Sits with the field it labels, not a full stack gap above it. */
+	.add-label {
+		margin-bottom: calc(var(--ds-space-2) - var(--ds-space-3));
+		color: var(--ds-fg-2);
 	}
 	.add {
 		display: grid;
