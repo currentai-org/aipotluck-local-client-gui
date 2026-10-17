@@ -36,6 +36,9 @@
 	// Ids of the per-model jobs one press of Benchmark queued; their outcome is reported once, together.
 	let batch = $state<string[]>([]);
 	let outcome = $state<Note | null>(null);
+	// Where the outcome line sits: under the control that caused it (the list for a removal, the
+	// Add field for a pull, the Benchmark button for a benchmark).
+	let outcomeAt = $state<'list' | 'add' | 'bench'>('bench');
 	let now = $state(Date.now());
 	let sizes = $state<Record<string, number | null>>({});
 
@@ -97,9 +100,13 @@
 			if (batch.includes(previous.id)) {
 				if (!batchLeft) {
 					outcome = batchOutcome(jobs.filter((j) => batch.includes(j.id)));
+					outcomeAt = 'bench';
 					batch = [];
 				}
-			} else if (finished) outcome = jobOutcome(finished);
+			} else if (finished) {
+				outcome = jobOutcome(finished);
+				outcomeAt = finished.kind === 'pull' ? 'add' : 'bench';
+			}
 		}
 	}
 
@@ -176,7 +183,10 @@
 		deleteError = null;
 		try {
 			const r = await api.service('DELETE', `/models?model=${encodeURIComponent(id)}`);
-			if (r.status === 200) outcome = { text: `Removed ${modelName(id)}.` };
+			if (r.status === 200) {
+				outcome = { text: `Removed ${modelName(id)}.` };
+				outcomeAt = 'list';
+			}
 			else deleteError = errorMessage(r.body, `Couldn’t remove it (HTTP ${r.status}).`);
 		} catch (e) {
 			deleteError = String(e);
@@ -298,11 +308,10 @@
 				</details>
 			{/if}
 		</div>
-	{:else if outcome}
-		<p class="model-note small" class:warn={outcome.warn} class:positive={!outcome.warn} role="status">
-			<Icon name={outcome.warn ? 'error-warning-line' : 'checkbox-circle-fill'} size={14} />{outcome.text}
-		</p>
 	{/if}
+	{#if !job && outcome && outcomeAt === 'list'}{@render outcomeLine(outcome)}{/if}
+
+	<label class="small add-label" for="add-model">Add a new model:</label>
 
 	<form
 		class="add"
@@ -338,6 +347,7 @@
 			</div>
 		{/if}
 	{/if}
+	{#if !job && outcome && outcomeAt === 'add'}{@render outcomeLine(outcome)}{/if}
 
 	<div class="row">
 		<button
@@ -351,7 +361,14 @@
 			{#if job}Available once the job above finishes.{:else}{bench.hint}{/if}
 		</p>
 	</div>
+	{#if !job && outcome && outcomeAt === 'bench'}{@render outcomeLine(outcome)}{/if}
 </section>
+
+{#snippet outcomeLine(o: Note)}
+	<p class="model-note small" class:warn={o.warn} class:positive={!o.warn} role="status">
+		<Icon name={o.warn ? 'error-warning-line' : 'checkbox-circle-fill'} size={14} />{o.text}
+	</p>
+{/snippet}
 
 <style>
 	.models-head {
@@ -463,6 +480,11 @@
 	}
 	.faint {
 		color: var(--ds-fg-3);
+	}
+	/* Sits with the field it labels, not a full stack gap above it. */
+	.add-label {
+		margin-bottom: calc(var(--ds-space-2) - var(--ds-space-3));
+		color: var(--ds-fg-2);
 	}
 	.add {
 		display: grid;
