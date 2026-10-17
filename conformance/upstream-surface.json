@@ -574,8 +574,6 @@
       ],
       "tag": "1.18.1",
       "unverified_assets": [
-        "macos-arm64",
-        "macos-x64",
         "windows-x64"
       ]
     },
@@ -680,7 +678,7 @@
     "default_port": 8069,
     "files": {
       "diagnostics.py": {
-        "sha256": "282eebabc6a2268b9c4bfad189e640b760a4baac780e0828fa1cd1187892a63a"
+        "sha256": "22a0ea1c5d95a6e22605fe4e69c0f79fec013b09026a679b3a00accf7a998ecd"
       },
       "runner.py": {
         "sha256": "58c9f57d9fec695923aea5a5eed2beefc66c1eaa85e5f686d908d5cd68223127"
@@ -752,9 +750,9 @@
       "tunnel"
     ]
   },
-  "source_commit": "318da88afa819e15191d401a3e717c43d6af2c5c",
-  "source_repo": "upstream-318da88afa819e15191d401a3e717c43d6af2c5c",
-  "source_subject": "Merge branch 'andrewtergis/gui-upstream-fixes'",
+  "source_commit": "282fccf7bceaed1ae7c4a5444e5d1cb2f67ed9b8",
+  "source_repo": "aitpotluck-local-client",
+  "source_subject": "fix(installer): measure total RAM on macOS so ctx sizing keeps its memory budget",
   "tunnel": {
     "argv": [
       {
