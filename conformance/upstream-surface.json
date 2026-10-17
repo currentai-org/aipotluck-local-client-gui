@@ -750,9 +750,9 @@
       "tunnel"
     ]
   },
-  "source_commit": "282fccf7bceaed1ae7c4a5444e5d1cb2f67ed9b8",
+  "source_commit": "5a4736e9522fa22fb79112c3dac2e14e3beab538",
   "source_repo": "aitpotluck-local-client",
-  "source_subject": "fix(installer): measure total RAM on macOS so ctx sizing keeps its memory budget",
+  "source_subject": "Merge branch 'andrewtergis/cur-1966-support-for-macos-in-cpu-mode'",
   "tunnel": {
     "argv": [
       {
