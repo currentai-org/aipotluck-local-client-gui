@@ -318,6 +318,11 @@ def main() -> int:
             wd.shot("6-benchmarked")
             if "Benchmark finished" in page:
                 assert "Benchmark finished for 2 models" in page, f"the batch was not reported as one benchmark:\n{page}"
+                # The outcome sits under the Benchmark button, not above the Add field.
+                order = wd.js("""const t = document.querySelector('section[aria-label=Models]').innerText;
+                    return [t.indexOf('Add a new model:'), t.search(/RE-?BENCHMARK|Re-benchmark/i), t.indexOf('Benchmark finished')].join(',')""") or ""
+                lab, btn, done = (int(x) for x in order.split(","))
+                assert -1 < lab < btn < done, f"expected 'Add a new model:' < button < outcome, got {order}"
                 titles = wd.js("return [...document.querySelectorAll('.model-score')].map(e => e.title).join('\\n')") or ""
                 assert "Not measured yet" not in titles, f"a model is still unmeasured after the benchmark:\n{titles}"
                 hint = wd.js("const b = [...document.querySelectorAll('button')].find(e => /benchmark/i.test(e.innerText)); return b ? b.innerText + ' | ' + b.nextElementSibling.innerText : ''") or ""
