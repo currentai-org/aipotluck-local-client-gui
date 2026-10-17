@@ -15,7 +15,7 @@ What it does, through the actual window (WebDriver via tauri-driver -> WebKitWeb
   5. running screen: service + inference server healthy; the tunnel row must report the fake
      endpoint as NOT connected (proves the status screen reads tunnel_connected, not `running`)
   6. models: the installed model is listed; a malformed Add is refused; a second small real model
-     is added (progress panel shown while it downloads and measures); Benchmark scores both; one is
+     is added (progress panel shown while it downloads and measures); Benchmark scores the unscored ones; one is
      deleted through its confirm row (skipped with --skip-models)
   7. Unpair -> back to the pair screen, runtime.json logged out
 Screenshots of every step go to build/e2e/.
@@ -295,22 +295,34 @@ def main() -> int:
             wd.shot("6-added")
             steps.append(f"added {SECOND_MODEL} through POST /models in {time.time() - t0:.0f}s, with progress shown")
 
+            # LocalScore's explanation is the column heading's hover text, not a paragraph.
+            tip = wd.js("const h = [...document.querySelectorAll('.model-cols span')].find(e => e.innerText.trim().toUpperCase() === 'LOCALSCORE'); return h ? h.title : ''") or ""
+            assert tip.startswith("LocalScore is how quickly"), f"LocalScore heading has no explanation on hover: {tip!r}"
+            assert "LocalScore is how quickly" not in wd.text(), "the LocalScore explanation is still a paragraph on the page"
+
+            # Neither model has a score yet (a pull doesn't measure), so Benchmark measures just
+            # those: one queued upstream job per model, run one after another.
+            hint = wd.js("const b = [...document.querySelectorAll('button')].find(e => e.innerText.includes('BENCHMARK') || e.innerText.includes('Benchmark')); return b ? b.innerText + ' | ' + b.nextElementSibling.innerText : ''") or ""
+            assert "Re-benchmark" not in hint and "2 models without a score" in hint, f"Benchmark should offer to measure the 2 unscored models: {hint!r}"
             wd.click_button("Benchmark")
-            page = wd.wait_for("Benchmarking every model", 30, "6-bench-started")
-            assert "up to about 6 min for all 2" in page, f"no time hint while benchmarking:\n{page}"
+            page = wd.wait_for("for the 2 left", 30, "6-bench-started")  # the batch's time hint
+            assert "Benchmarking SmolLM2" in page, f"no benchmark progress shown:\n{page}"
             time.sleep(3); wd.shot("6-benchmarking")
             t0 = time.time()
             end = time.time() + 900
             while time.time() < end:
                 page = wd.text()
-                if "Benchmarking every model" not in page and ("Benchmark finished" in page or "Measured " in page):
+                if "Benchmarking " not in page and ("Benchmark finished" in page or "Measured " in page):
                     break
                 time.sleep(2)
             wd.shot("6-benchmarked")
             if "Benchmark finished" in page:
+                assert "Benchmark finished for 2 models" in page, f"the batch was not reported as one benchmark:\n{page}"
                 titles = wd.js("return [...document.querySelectorAll('.model-score')].map(e => e.title).join('\\n')") or ""
                 assert "Not measured yet" not in titles, f"a model is still unmeasured after the benchmark:\n{titles}"
-                steps.append(f"benchmarked both through POST /models/benchmark in {time.time() - t0:.0f}s; both scored")
+                hint = wd.js("const b = [...document.querySelectorAll('button')].find(e => /benchmark/i.test(e.innerText)); return b ? b.innerText + ' | ' + b.nextElementSibling.innerText : ''") or ""
+                assert "RE-BENCHMARK" in hint.upper() and "all 2 again" in hint, f"with every model scored the button should re-measure all: {hint!r}"
+                steps.append(f"benchmarked the 2 unscored models as 2 queued jobs in {time.time() - t0:.0f}s; button then offers Re-benchmark of all 2")
             else:
                 # Upstream declines to measure a busy machine rather than record a wrong score (on a
                 # dev laptop, the real install's llama-server is often why). What the GUI owes the
