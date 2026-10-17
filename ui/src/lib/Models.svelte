@@ -7,8 +7,9 @@
 	import { api } from './api';
 	import { isModelId, normaliseModelId } from './state';
 	import {
-		MEASURE_BUDGET_SECONDS,
 		activeJob,
+		batchOutcome,
+		benchmarkPlan,
 		canForceAdd,
 		downloadProgress,
 		elapsedSeconds,
@@ -31,6 +32,9 @@
 	let listing = $state<ModelListing | null>(null);
 	let listError = $state<string | null>(null);
 	let job = $state<Job | null>(null);
+	let jobs = $state<Job[]>([]);
+	// Ids of the per-model jobs one press of Benchmark queued; their outcome is reported once, together.
+	let batch = $state<string[]>([]);
 	let outcome = $state<Note | null>(null);
 	let now = $state(Date.now());
 	let sizes = $state<Record<string, number | null>>({});
@@ -49,7 +53,10 @@
 	const locked = $derived(disabled || !!job || sending || !!deleting);
 	const stage = $derived(job ? jobStage(job, count) : '');
 	const expected = $derived(job?.model ? sizes[job.model] : null);
-	const hint = $derived(job ? jobHint(job, { downloadBytes: expected, modelCount: count }) : '');
+	// A queued id the last /jobs poll hasn't seen yet still counts as left: it was accepted (202).
+	const batchLeft = $derived(batch.filter((id) => !jobs.some((j) => j.id === id && (j.state === 'succeeded' || j.state === 'failed'))).length);
+	const hint = $derived(job ? jobHint(job, { downloadBytes: expected, modelCount: count, batchLeft }) : '');
+	const bench = $derived(benchmarkPlan(listing?.models ?? []));
 	const download = $derived(job ? downloadProgress(job, expected) : null);
 
 	async function loadModels() {
@@ -72,7 +79,6 @@
 
 	/** Follow the newest unfinished job, wherever it was started; note how it ended once it's done. */
 	async function loadJobs() {
-		let jobs: Job[] = [];
 		try {
 			const r = await api.service<{ jobs: Job[] }>('GET', '/jobs');
 			if (r.status !== 200) return;
@@ -86,9 +92,50 @@
 		if (previous && (!job || job.id !== previous.id)) {
 			const finished = jobs.find((j) => j.id === previous.id);
 			// List first, so the outcome line never sits above a list that doesn't reflect it yet.
+			// Each model's score appears as its own job finishes, even mid-batch.
 			await loadModels();
-			if (finished) outcome = jobOutcome(finished);
+			if (batch.includes(previous.id)) {
+				if (!batchLeft) {
+					outcome = batchOutcome(jobs.filter((j) => batch.includes(j.id)));
+					batch = [];
+				}
+			} else if (finished) outcome = jobOutcome(finished);
 		}
+	}
+
+	/**
+	 * Benchmark what's missing, one queued upstream job per model (POST /models/benchmark with a
+	 * "model"), or everything with one job when nothing is missing. Upstream runs its queue one job
+	 * at a time, so queuing them all at once measures them one after another, never two at once.
+	 */
+	async function benchmark() {
+		addError = null;
+		const { targets } = bench;
+		if (!targets) {
+			await submit('/models/benchmark', {});
+			return;
+		}
+		sending = true;
+		outcome = null;
+		batch = [];
+		const queued: string[] = [];
+		try {
+			for (const model of targets) {
+				const r = await api.service<{ job: Job }>('POST', '/models/benchmark', { model });
+				if (r.status !== 202) {
+					addError = errorMessage(r.body, `The service refused to benchmark ${model} (HTTP ${r.status}).`);
+					break;
+				}
+				queued.push(r.body.job.id);
+				batch = [...queued];
+				job ??= r.body.job;
+			}
+		} catch (e) {
+			addError = String(e);
+		} finally {
+			sending = false;
+		}
+		await loadJobs();
 	}
 
 	async function submit(path: '/models' | '/models/benchmark', body: Record<string, unknown>) {
@@ -171,7 +218,7 @@
 			<div class="error" role="alert"><Icon name="error-warning-line" /><span>Couldn’t refresh the list: {listError}</span></div>
 		{/if}
 		{#if listing && rows.length}
-			<div class="model-cols label" aria-hidden="true"><span>Model</span><span>LocalScore</span><span></span></div>
+			<div class="model-cols label"><span>Model</span><span class="has-tip" title={localScoreExplainer()}>LocalScore</span><span></span></div>
 			{#each rows as row (row.id)}
 				<div class="model" class:dim={deleting === row.id}>
 					<div class="model-line">
@@ -220,9 +267,6 @@
 	</div>
 	{#if deleteError}
 		<div class="error" role="alert"><Icon name="error-warning-line" /><span>{deleteError}</span></div>
-	{/if}
-	{#if rows.some((r) => r.score)}
-		<p class="small faint">{localScoreExplainer()}</p>
 	{/if}
 
 	{#if job}
@@ -299,15 +343,12 @@
 		<button
 			class="btn secondary"
 			disabled={locked || !count}
-			onclick={() => {
-				addError = null;
-				submit('/models/benchmark', {});
-			}}
+			onclick={benchmark}
 		>
-			<Icon name="dashboard-3-line" /> Benchmark
+			<Icon name="dashboard-3-line" /> {bench.label}
 		</button>
-		<p class="small faint">
-			{#if job}Available once the job above finishes.{:else}Measures every model, up to {Math.round(MEASURE_BUDGET_SECONDS / 60)} min each.{/if}
+		<p class="small faint one-line">
+			{#if job}Available once the job above finishes.{:else}{bench.hint}{/if}
 		</p>
 	</div>
 </section>
@@ -358,6 +399,9 @@
 		border: var(--ds-border-hairline) solid var(--ds-line-2);
 		border-radius: var(--ds-radius-sharp);
 		white-space: nowrap;
+	}
+	.has-tip {
+		cursor: help;
 	}
 	.model-score {
 		display: inline-flex;

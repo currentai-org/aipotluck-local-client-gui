@@ -18,7 +18,7 @@ export const MEASURE_BUDGET_SECONDS = 180;
  */
 export const SCORE_BANDS = { fair: 100, good: 250, excellent: 1000 };
 
-/** A plain-words explanation of LocalScore, for someone who has never seen the number. */
+/** A plain-words explanation of LocalScore, for the column heading's hover text. */
 export function localScoreExplainer(): string {
 	const n = (v: number) => v.toLocaleString('en-US');
 	return (
@@ -156,9 +156,43 @@ export function modelRow(m: ModelEntry): ModelRow {
 	};
 }
 
-/** The job to show progress for: the newest one not yet finished. `/jobs` is newest first. */
+export type BenchmarkPlan = {
+	/** Model ids to measure one by one, or null to re-measure every model in one upstream job. */
+	targets: string[] | null;
+	label: string;
+	/** The one line beside the button: what pressing it will do, and roughly how long. */
+	hint: string;
+};
+
+/**
+ * What the Benchmark button does right now. Any model without a usable score -- never measured,
+ * or measured before something that invalidates it (`stale`) -- means it measures just those,
+ * one queued job each. Once every model has a score it re-measures them all.
+ *
+ * A held-back model is left out of "what's missing": measuring it is what held it back. It is
+ * still included in a re-benchmark of everything, which is upstream's own `benchmark` with no id.
+ */
+export function benchmarkPlan(models: ModelEntry[]): BenchmarkPlan {
+	const per = Math.round(MEASURE_BUDGET_SECONDS / 60);
+	const missing = models.filter((m) => !m.held_back && (!m.score || m.stale)).map((m) => m.id);
+	if (missing.length) {
+		const what = missing.length === 1 ? modelName(missing[0]) : `the ${missing.length} models without a score`;
+		return { targets: missing, label: 'Benchmark', hint: `Measures ${what}, up to ${per} min${missing.length > 1 ? ' each' : ''}.` };
+	}
+	return {
+		targets: null,
+		label: 'Re-benchmark',
+		hint: models.length === 1 ? `Measures it again, up to ${per} min.` : `Measures all ${models.length} again, up to ${per} min each.`
+	};
+}
+
+/**
+ * The job to show progress for: the one running, else the one that will run next. `/jobs` is
+ * newest first and upstream runs one job at a time, so with several queued (a benchmark of the
+ * unmeasured models is one job each) the next to run is the oldest queued one.
+ */
 export function activeJob(jobs: Job[]): Job | null {
-	return jobs.find((j) => j.state === 'queued' || j.state === 'running') ?? null;
+	return jobs.find((j) => j.state === 'running') ?? [...jobs].reverse().find((j) => j.state === 'queued') ?? null;
 }
 
 export function jobTitle(job: Job): string {
@@ -202,7 +236,7 @@ function minutes(seconds: number): string {
 }
 
 /** How long it may take, said once, so a quiet progress bar doesn't read as stuck. */
-export function jobHint(job: Job, opts: { downloadBytes?: number | null; modelCount?: number } = {}): string {
+export function jobHint(job: Job, opts: { downloadBytes?: number | null; modelCount?: number; batchLeft?: number } = {}): string {
 	const measure = minutes(MEASURE_BUDGET_SECONDS);
 	if (job.kind === 'pull') {
 		// A pull downloads and sizes; measuring is Benchmark's job (upstream 928b822).
@@ -210,6 +244,10 @@ export function jobHint(job: Job, opts: { downloadBytes?: number | null; modelCo
 		return `${size}, then a moment to size it for this computer. A large model can take a while to download.`;
 	}
 	if (job.kind === 'benchmark') {
+		const left = opts.batchLeft ?? 1;
+		if (job.model && left > 1) {
+			return `Up to ${measure} per model, so up to about ${minutes(MEASURE_BUDGET_SECONDS * left)} for the ${left} left.`;
+		}
 		const n = job.model ? 1 : (opts.modelCount ?? 0);
 		return n > 1
 			? `Up to ${measure} per model, so up to about ${minutes(MEASURE_BUDGET_SECONDS * n)} for all ${n}.`
@@ -279,6 +317,23 @@ export function jobOutcome(job: Job): Note {
 		};
 	}
 	return { text: 'Done.' };
+}
+
+/**
+ * One line for a batch of single-model benchmark jobs, read as one benchmark: their per-model
+ * results pooled into the same shape upstream gives a benchmark of everything. A job that failed
+ * outright counts as a model not measured, with its error as the reason.
+ */
+export function batchOutcome(jobs: Job[]): Note {
+	if (jobs.length === 1) return jobOutcome(jobs[0]);
+	type Measured = { model?: string; measured?: boolean };
+	const results = jobs.flatMap((j): Measured[] =>
+		j.state === 'failed'
+			? [{ model: j.model ?? undefined, measured: false, measurement_skipped: j.error ?? 'it didn’t finish' } as Measured]
+			: ((j.result?.results as Measured[] | undefined) ?? [])
+	);
+	if (results.length && results.every((r) => r.measured)) return { text: `Benchmark finished for ${results.length} models.` };
+	return jobOutcome({ ...jobs[0], model: null, state: 'succeeded', result: { results }, error: null });
 }
 
 /** Upstream refused an Add before downloading because the weights won't fit; the user may insist. */
