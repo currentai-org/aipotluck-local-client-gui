@@ -6,12 +6,14 @@
 ┌──────────────────── AI Potluck Local Client (Tauri v2) ────────────────────┐
 │  ui/ (Svelte 5, Alpha DS tokens)                                            │
 │     │  invoke(): app_state · install_plan · model_size · setup_device ·     │
-│     │            clipboard_pairing · pair · unpair · service_call ·         │
-│     │            open_settings_page                                         │
+│     │            pair_one_click · cancel_pairing · pairing_server ·         │
+│     │            set_pairing_server · clipboard_pairing · pair · unpair ·   │
+│     │            service_call · open_link · open_settings_page              │
 │  src-tauri/ (Rust)                                                          │
 │     ├─ runtime.rs   unpack bundled Python + upstream source; run upstream   │
 │     ├─ service.rs   allow-listed proxy to 127.0.0.1:8069                    │
-│     └─ pairing.rs   recognise the Copy-button JSON (never returns secret)   │
+│     ├─ pairing.rs   recognise the Copy-button JSON (never returns secret)   │
+│     └─ settings.rs  the GUI's own prefs: the pairing-server override only   │
 └──────┬─────────────────────────────────────────────┬────────────────────────┘
        │ python -m aipotluck.installer.install        │ HTTP (allow-list)
        │ python -m aipotluck.installer.cli login/out  │
@@ -33,7 +35,9 @@ them as app resources:
   `runtime/python_version.json`, the same pin style as upstream's `llama_version.json`;
 - `upstream-<sha12>.tar.gz`: `git archive` of the pinned submodule commit;
 - `gui_probe.py`: our read-only state probe;
-- `gui_plan.py`: our read-only install plan (what Set up would install, and its sizes).
+- `gui_plan.py`: our read-only install plan (what Set up would install, and its sizes);
+- `gui_server.py`: which AI Potluck server one-click pairing would use, decided by upstream's own
+  `pairing.resolve_server_url`.
 
 On first launch `runtime.rs` verifies each archive's sha256 and unpacks it, atomically, into
 `<data_home>/aipotluck/gui-runtime/` (beside upstream's own `<data_home>/aipotluck/llama.cpp/`).
@@ -70,17 +74,30 @@ the one we test (`tools/bundled-python.sh`) is the one users run.
   - register and start the OS service.
 
   Log lines stream to the UI as a progress caption plus an expandable log.
-- **Pair** (zero keypresses):
-  1. The UI polls `clipboard_pairing` on window focus and every 3 s while on the pair screen.
-  2. When the clipboard holds `{tunnelId, tunnelSecret, tunnelEndpoint}`, it shows the endpoint and
-     a **Pair this computer** button.
-  3. Clicking writes the clipboard text to a 0600 file and runs
-     `cli login --credentials-file <file>`, which downloads newt with upstream's pin, writes
-     `runtime.json`'s `tunnel` section, and restarts the service.
-  4. The file is deleted when login exits, and the clipboard is cleared if it still holds the
-     pairing.
+- **Pair, one click (the default).** **Pair in your browser** runs upstream's `cli login` with no
+  credential flags:
+  1. Upstream fetches and verifies newt first, so a server it provisions is never left stranded.
+  2. It makes a random pairing id and opens aipotluck.org's pair page in the browser. It always
+     prints that link; the screen shows it with **Open it again** and **Copy link**, so the person
+     can approve on another device.
+  3. It polls aipotluck.org until the signed-in person approves. The credentials go straight from
+     aipotluck.org into upstream's `runtime.json`; they never pass through the GUI.
+  4. **Cancel** sends SIGINT, which upstream handles as Ctrl-C: "Pairing cancelled; nothing was
+     changed."
 
-  A paste box is the fallback.
+  The screen reads upstream's own words from the log (`ui/src/lib/oneclick.ts`): the link, whether a
+  browser opened, and the reason a pairing stopped. A server without one-click pairing (HTTP 404)
+  opens the paste fallback automatically.
+- **Pair, manually (the fallback).** **Paste the code instead**, or a pairing found on the clipboard
+  (`clipboard_pairing`, polled on focus and every 3 s), writes the Copy-button JSON to a 0600 file
+  and runs `cli login --credentials-file <file>`. The file is deleted when login exits, and the
+  clipboard is cleared if it still holds the pairing.
+- **Pairing server override (hidden).** For testing against develop or a local dev server. A small
+  gear in the footer, in the hairline colour, that only reads as a control on hover or focus. Once
+  set, the footer says "pairing with <server>" in the accent colour, so it can't be left on by
+  accident. The value must pass upstream's own `resolve_server_url` (https, or http only to
+  localhost) before it's saved to `<data_home>/aipotluck/gui-settings.json`, and is passed as
+  `--server-url=<url>`. Without it, upstream's default applies, including `$AIPOTLUCK_SERVER_URL`.
 - **Status** shows `/healthz` plus `/status`. The tunnel row reads `tunnel_connected`, not
   `running`: upstream's README documents newt running for 20+ hours while never connected.
 - **Models** (on the status screen, once paired) is upstream's HTTP model API, through the proxy:
