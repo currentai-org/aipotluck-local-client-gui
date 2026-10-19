@@ -38,6 +38,9 @@ fi
 VERSION="${LABEL:-$(cd "$ROOT" && (python3 tools/release_version.py 2>/dev/null || python tools/release_version.py) | tr -d '\r')}"
 NAME="aipotluck-local-client-gui"
 mkdir -p "$OUT"
+# Absolute from here on: the .app zip step below cd's into the bundle directory, and a relative
+# --out (CI passes `--out dist`) would then point somewhere else entirely.
+OUT="$(cd "$OUT" && pwd)"
 rm -f "$OUT"/*
 
 n=0
@@ -58,10 +61,13 @@ for f in "$BUNDLE"/appimage/*.AppImage;    do copy "$f" AppImage; done
 for f in "$BUNDLE"/msi/*.msi;              do copy "$f" msi; done
 for f in "$BUNDLE"/nsis/*-setup.exe;       do copy "$f" setup.exe; done
 for f in "$BUNDLE"/dmg/*.dmg;              do copy "$f" dmg; done
-# The .app is a directory; ship it zipped for anyone who doesn't want the dmg.
+# The .app is a directory; ship it zipped for anyone who doesn't want the dmg. `ditto` (macOS)
+# keeps the code signature and extended attributes intact; zip is the fallback elsewhere.
 for d in "$BUNDLE"/macos/*.app; do
-  (cd "$(dirname "$d")" && ditto -c -k --keepParent "$(basename "$d")" "$OUT/${NAME}_${VERSION}_${TARGET}.app.zip" 2>/dev/null \
-    || zip -qry "$OUT/${NAME}_${VERSION}_${TARGET}.app.zip" "$(basename "$d")")
+  zipped="$OUT/${NAME}_${VERSION}_${TARGET}.app.zip"
+  (cd "$(dirname "$d")" && { ditto -c -k --keepParent "$(basename "$d")" "$zipped" 2>/dev/null \
+    || zip -qry "$zipped" "$(basename "$d")"; })
+  [ -s "$zipped" ] || { echo "failed to zip $d into $zipped" >&2; exit 1; }
   n=$((n + 1))
 done
 
