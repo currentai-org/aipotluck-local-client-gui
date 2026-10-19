@@ -46,8 +46,8 @@ One installer set per **OS × CPU architecture**, declared in
 | linux-x64 | ✅ | `ubuntu-22.04` | `.deb`, `.AppImage` | must |
 | linux-arm64 | ✅ | `ubuntu-22.04-arm` | `.deb`, `.AppImage` | nice |
 | windows-x64 | ⏸ until proven locally | `windows-2022` | `-setup.exe` (NSIS), `.msi` | must |
-| macos-arm64 | ⏸ until proven locally | `macos-15` | `.dmg`, `.app.zip` | must |
-| macos-x64 | ⏸ until proven locally | `macos-15` (cross-compiled) | `.dmg`, `.app.zip` | optional |
+| macos-arm64 | ✅ | `macos-15` | `.dmg`, `.app.zip` | must |
+| macos-x64 | ✅ | `macos-15` (cross-compiled) | `.dmg`, `.app.zip` | optional |
 
 There are no CUDA or Metal builds of the GUI. The GUI contains no GPU code. The bundled CLI
 downloads the right llama.cpp build (CPU, CUDA, Vulkan or ROCm; Metal is built into the macOS
@@ -76,8 +76,8 @@ then flip it on.
    `only: windows-x64`. A dispatch builds a disabled target on request, artifacts only. Nothing
    is published.
 4. **Enable it**: set `"enabled": true` in `.github/build-targets.json`, and update
-   `test_only_linux_is_enabled_until_windows_and_macos_are_proven_locally` in the same commit (it
-   exists to make that change deliberate). The next nightly includes it.
+   `test_only_targets_proven_on_a_real_machine_are_enabled` in the same commit (it exists to make
+   that change deliberate). The next nightly includes it.
 5. Once it has been green for a while, add `Build <target>` to `main`'s required checks.
 
 ## Workflows

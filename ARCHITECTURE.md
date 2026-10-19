@@ -128,7 +128,8 @@ The UI says plainly that the server only runs while the window is open.
 - Source-build hosts (no prebuilt llama.cpp for the machine) may need apt packages. Upstream only
   installs them with consent through an interactive prompt the GUI can't answer, so the log shows
   upstream's instructions instead.
-- macOS and Windows aren't built or tested yet. Upstream's newt checksums for those platforms are
-  still placeholders, so pairing there fails until upstream fills them in. Signing comes later.
+- macOS builds in CI (arm64 and x64, unsigned: ad-hoc signature only, no Developer ID or
+  notarization yet). Windows isn't built: upstream's newt checksum for it is still a placeholder,
+  so pairing there fails until upstream fills it in. Signing comes later.
 - Release `.deb`/AppImage builds must be made on Ubuntu 22.04 for glibc compatibility
   (docs/BUILDING.md).
