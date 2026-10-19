@@ -32,6 +32,7 @@ pub struct Runtime {
     pub upstream: PathBuf,
     pub probe_script: PathBuf,
     pub plan_script: PathBuf,
+    pub server_script: PathBuf,
     pub upstream_sha: String,
 }
 
@@ -136,6 +137,7 @@ pub fn ensure_unpacked(resource_dir: &Path) -> Result<Runtime, String> {
 
     let probe_script = install_sidecar(&rdir, &root, "gui_probe.py")?;
     let plan_script = install_sidecar(&rdir, &root, "gui_plan.py")?;
+    let server_script = install_sidecar(&rdir, &root, "gui_server.py")?;
 
     let python = paths::python_exe(&py_dir);
     if !python.exists() {
@@ -147,6 +149,7 @@ pub fn ensure_unpacked(resource_dir: &Path) -> Result<Runtime, String> {
         upstream: up_dir,
         probe_script,
         plan_script,
+        server_script,
         upstream_sha: manifest.upstream_sha,
     })
 }
@@ -191,7 +194,11 @@ impl Runtime {
 
     /// What Set up would install and how big each part is (sidecar/gui_plan.py). Reads only; asks
     /// Hugging Face and GitHub for sizes, so it can take a few seconds.
-    pub fn plan(&self, model_hf: Option<&str>, model_only: bool) -> Result<serde_json::Value, String> {
+    pub fn plan(
+        &self,
+        model_hf: Option<&str>,
+        model_only: bool,
+    ) -> Result<serde_json::Value, String> {
         let mut cmd = self.python_cmd();
         cmd.arg(&self.plan_script);
         if let Some(m) = model_hf {
@@ -212,6 +219,27 @@ impl Runtime {
         serde_json::from_slice(&out.stdout).map_err(|e| format!("plan output: {e}"))
     }
 
+    /// Which AI Potluck server one-click pairing would use, given the GUI's saved override (if any),
+    /// as upstream's own pairing.resolve_server_url() decides it (sidecar/gui_server.py).
+    pub fn server(&self, server_url: Option<&str>) -> Result<serde_json::Value, String> {
+        let mut cmd = self.python_cmd();
+        cmd.arg(&self.server_script);
+        if let Some(u) = server_url {
+            // One token, so the value can never be read as a flag of its own.
+            cmd.arg(format!("--server-url={u}"));
+        }
+        let out = cmd
+            .output()
+            .map_err(|e| format!("server lookup failed to start: {e}"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "server lookup failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            ));
+        }
+        serde_json::from_slice(&out.stdout).map_err(|e| format!("server lookup output: {e}"))
+    }
+
     /// The client as installed: the bundled interpreter plus upstream's source, as unpacked.
     pub fn client_bytes(&self) -> u64 {
         dir_bytes(&self.python_dir) + dir_bytes(&self.upstream)
@@ -223,6 +251,7 @@ impl Runtime {
         &self,
         module: &str,
         args: &[String],
+        on_spawn: impl FnOnce(u32),
         on_line: impl Fn(&str) + Send + Sync + 'static,
     ) -> Result<i32, String> {
         let mut child = self
@@ -234,6 +263,7 @@ impl Runtime {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| format!("could not start {module}: {e}"))?;
+        on_spawn(child.id());
         let on_line = std::sync::Arc::new(on_line);
         let mut threads = vec![];
         for stream in [

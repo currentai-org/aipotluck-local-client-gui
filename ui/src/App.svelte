@@ -3,6 +3,15 @@
 	import Icon from './lib/Icon.svelte';
 	import Models from './lib/Models.svelte';
 	import SetupSettings from './lib/SetupSettings.svelte';
+	import ServerOverride from './lib/ServerOverride.svelte';
+	import {
+		browserOpened,
+		latestPairingLink,
+		oneClickUnavailable,
+		pairingCancelled,
+		pairingFailure,
+		serverOf
+	} from './lib/oneclick';
 	import { api, onRuntimeReady, onTaskDone, onTaskLog, type PairingPreview } from './lib/api';
 	import {
 		formatBytes,
@@ -25,6 +34,9 @@
 	let clip = $state<PairingPreview | null>(null);
 	let pasted = $state('');
 	let showPaste = $state(false);
+	// Which pairing ran last, so the log is read the right way: 'oneclick' prints a link and waits.
+	let pairMode = $state<'oneclick' | 'paste' | null>(null);
+	let copied = $state(false);
 	let logEl: HTMLPreElement | undefined = $state();
 
 	// Set up's plan: what it will install and how big. `modelHf` is the Customize override ('' =
@@ -43,6 +55,34 @@
 	const planPending = $derived(planFor !== modelHf);
 	const items = $derived(plan ? planItems(plan, planPending ? modelHf : null) : []);
 	const total = $derived(planTotal(items));
+	const waiting = $derived(busy === 'pair' && pairMode === 'oneclick');
+	const link = $derived(pairMode === 'oneclick' ? latestPairingLink(log) : null);
+	const opened = $derived(browserOpened(log));
+	const noOneClick = $derived(pairMode === 'oneclick' && !waiting && oneClickUnavailable(log));
+	const cancelled = $derived(pairMode === 'oneclick' && !waiting && pairingCancelled(log));
+	const override = $derived(app && app.ready ? (app.server_url_override ?? null) : null);
+
+	function pairOneClick() {
+		pairMode = 'oneclick';
+		showPaste = false;
+		copied = false;
+		run(api.pairOneClick);
+	}
+
+	function pairPasted(text?: string) {
+		pairMode = 'paste';
+		run(() => api.pair(text));
+	}
+
+	async function copyLink() {
+		if (!link) return;
+		try {
+			await navigator.clipboard.writeText(link);
+			copied = true;
+		} catch {
+			copied = false;
+		}
+	}
 
 	async function loadPlan() {
 		const seq = ++planSeq;
@@ -100,7 +140,11 @@
 				queueMicrotask(() => logEl?.scrollTo({ top: logEl.scrollHeight }));
 			}),
 			onTaskDone(async (e) => {
-				if (!e.ok) taskError = `That didn’t finish (exit code ${e.code}). The details are in the log below.`;
+				if (e.task === 'pair' && pairMode === 'oneclick' && !e.ok) {
+					// Upstream's own reason (timed out, server refused, ...) beats an exit code; a cancel
+					// the person asked for isn't an error at all.
+					taskError = pairingCancelled(log) ? null : (pairingFailure(log) ?? `Pairing didn’t finish (exit code ${e.code}).`);
+				} else if (!e.ok) taskError = `That didn’t finish (exit code ${e.code}). The details are in the log below.`;
 				else if (e.task === 'pair') pasted = '';
 				await refresh();
 			})
@@ -216,52 +260,85 @@
 		<div class="stack">
 			<p class="label">Step 2 of 2</p>
 			<h1>Pair with AI Potluck</h1>
-			<p>
-				On aipotluck.org, open <span class="mono small">Settings → Local Inference</span>, choose
-				<em>Add a managed server</em>, click <em>Pair</em>, then <em>Copy</em>. Come back here.
-			</p>
+			<p>Approve this computer in your browser, signed in to your AI Potluck account. That’s it.</p>
 		</div>
 
-		{#if clip}
-			<div class="card" data-surface="2">
-				<p class="label">Pairing code found on your clipboard</p>
-				<p class="small mono">{clip.tunnel_endpoint}</p>
-				<button class="btn primary block" disabled={!!busy} onclick={() => run(() => api.pair())}>
-					<Icon name="link" /> Pair this computer
+		{#if waiting}
+			<div class="card" data-surface="2" aria-live="polite">
+				<p class="label">Waiting for your approval</p>
+				{#if link}
+					<p class="small">
+						{opened ? 'We opened this link in your browser.' : 'Open this link in a browser where you’re signed in to AI Potluck.'}
+						It works on any device, and expires in 10 minutes.
+					</p>
+					<p class="small mono pair-link" title={link}>{serverOf(link)}/chat/local-inference/pair</p>
+					<div class="row">
+						<button class="btn secondary" onclick={() => link && api.openUrl(link).catch((e) => (taskError = String(e)))}>
+							<Icon name="external-link-line" /> {opened ? 'Open it again' : 'Open in browser'}
+						</button>
+						<button class="btn ghost" onclick={copyLink}>
+							<Icon name={copied ? 'check-line' : 'clipboard-line'} /> {copied ? 'Copied' : 'Copy link'}
+						</button>
+					</div>
+				{:else}
+					<p class="small">{caption ?? 'Getting a pairing link…'}</p>
+				{/if}
+				<div class="progress" aria-label="Waiting for approval"></div>
+				<button class="btn ghost" onclick={() => api.cancelPairing().catch((e) => (taskError = String(e)))}>
+					<Icon name="close-line" /> Cancel
 				</button>
 			</div>
-		{:else}
-			<div class="row">
-				<button class="btn secondary" onclick={() => api.openSettingsPage().catch((e) => (taskError = String(e)))}>
-					<Icon name="external-link-line" /> Open aipotluck.org
-				</button>
-				<button class="btn ghost" onclick={() => (showPaste = !showPaste)}>
-					<Icon name="clipboard-line" /> Paste instead
-				</button>
-			</div>
-			<p class="small">Waiting for the pairing code… this screen picks it up as soon as it’s copied.</p>
-		{/if}
-
-		{#if showPaste}
-			<div class="stack">
-				<textarea
-					class="paste"
-					placeholder="Paste the pairing code here"
-					bind:value={pasted}
-					autocomplete="off"
-					spellcheck="false"
-				></textarea>
-				<button class="btn secondary" disabled={!pasted.trim() || !!busy} onclick={() => run(() => api.pair(pasted))}>
-					<Icon name="link" /> Pair
-				</button>
-			</div>
-		{/if}
-
-		{#if busy === 'pair'}
+		{:else if busy === 'pair'}
 			<div class="stack">
 				<div class="progress" aria-label="Pairing"></div>
 				<p class="small">{caption ?? 'Pairing…'}</p>
 			</div>
+		{:else}
+			{#if clip}
+				<!-- The code is already on the clipboard (copied from Settings): one click either way. -->
+				<div class="card" data-surface="2">
+					<p class="label">Pairing code found on your clipboard</p>
+					<p class="small mono">{clip.tunnel_endpoint}</p>
+					<button class="btn primary block" disabled={!!busy} onclick={() => pairPasted()}>
+						<Icon name="link" /> Pair with this code
+					</button>
+				</div>
+			{/if}
+			<button class={clip ? 'btn secondary block' : 'btn primary block'} disabled={!!busy} onclick={pairOneClick}>
+				<Icon name="link" /> Pair in your browser
+			</button>
+			{#if cancelled}
+				<p class="small">Pairing cancelled. Nothing was changed.</p>
+			{/if}
+			{#if noOneClick}
+				<p class="small">This server doesn’t offer one-click pairing. Paste the code from its Settings page instead.</p>
+			{/if}
+			{#if !clip}
+				<div>
+					<button class="btn ghost" aria-expanded={showPaste || noOneClick} onclick={() => (showPaste = !showPaste)}>
+						<Icon name="clipboard-line" /> Paste the code instead
+					</button>
+				</div>
+			{/if}
+			{#if (showPaste || noOneClick) && !clip}
+				<div class="stack">
+					<p class="small">
+						On aipotluck.org, open <span class="mono">Settings → Local Inference</span>, choose
+						<em>Add a managed server</em>, click <em>Pair</em>, then <em>Copy</em>.
+						<button class="link-inline" onclick={() => api.openSettingsPage().catch((e) => (taskError = String(e)))}>Open it</button>
+					</p>
+					<textarea
+						class="paste"
+						placeholder="Paste the pairing code here"
+						bind:value={pasted}
+						autocomplete="off"
+						spellcheck="false"
+					></textarea>
+					<button class="btn secondary pair-pasted" disabled={!pasted.trim() || !!busy} onclick={() => pairPasted(pasted)}>
+						<Icon name="link" /> Pair
+					</button>
+				</div>
+			{/if}
 		{/if}
 	{:else if screen === 'running' && app?.ready}
 		<div class="stack">
@@ -305,6 +382,7 @@
 
 <footer>
 	{#if app?.ready}
-		aipotluck-local-client {app.upstream_sha.slice(0, 7)}{app.hosted_by_gui ? ' · hosted by this window' : ''}
+		<span class="footer-text">aipotluck-local-client {app.upstream_sha.slice(0, 7)}{app.hosted_by_gui ? ' · hosted by this window' : ''}</span>
+		<ServerOverride {override} disabled={busy === 'pair'} onchange={refresh} />
 	{/if}
 </footer>
