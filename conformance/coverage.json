@@ -120,7 +120,11 @@
     },
     "cli.subcommands.login.flags.--credentials-file": {
       "status": "implemented",
-      "note": "Pair button writes the clipboard/pasted JSON to a 0600 file and runs `cli login --credentials-file`."
+      "note": "The manual fallback ('Paste the code instead', or a code found on the clipboard) writes the JSON to a 0600 file and runs `cli login --credentials-file`."
+    },
+    "cli.subcommands.login.flags.--server-url": {
+      "status": "implemented",
+      "note": "Default pairing is one-click: `cli login` with no credential flags (pair_one_click). The hidden footer override passes `--server-url=<url>` as one token; the value is validated by upstream's own pairing.resolve_server_url (sidecar/gui_server.py) before it is saved. tests/test_upstream_contract.py holds upstream to the printed link, SIGINT cancel and the 404 fallback message."
     },
     "cli.subcommands.login.flags.--tunnel-endpoint": {
       "status": "not_applicable",
