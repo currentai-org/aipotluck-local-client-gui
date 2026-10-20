@@ -37,6 +37,18 @@ on:
 permissions:
   contents: read
 
+# Installers travel between jobs through Current AI's S3 artifact bucket, not GitHub's artifact
+# store: GitHub refuses every upload org-wide once the org's artifact storage quota is hit, which
+# would stop the nightly and draft releases with it. Jobs reach the bucket through GitHub's OIDC
+# token and a role that can read and write only this repo's prefixes (aipotluck.org,
+# ci-runners/hostedartifacts.go), so no key is stored here. The ret-14/ prefix expires in 14 days.
+# PR builds still try GitHub's artifact store as well, best effort, so the installers can be
+# downloaded from the run page when it accepts them.
+env:
+  ARTIFACT_ROLE: arn:aws:iam::213666289325:role/aipotluck-ci-artifacts-hosted
+  ARTIFACT_REGION: us-west-2
+  ARTIFACT_URI: s3://aipotluck-ci-artifacts-213666289325-us-west-2/ret-14/${{ github.repository }}/${{ github.run_id }}
+
 concurrency:
   # One nightly publish at a time, and a newer push to main supersedes an older one still running:
   # the nightly should always be the tip, never an older commit that happened to finish last.
@@ -94,6 +106,9 @@ jobs:
     needs: plan
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -180,7 +195,22 @@ jobs:
           echo "requires $need"
           echo "### ${{ matrix.target }} requires ${need}" >> "$GITHUB_STEP_SUMMARY"
 
+      # Dependabot's PRs get no OIDC token, so they build without keeping the installers.
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
+        with:
+          role-to-assume: ${{ env.ARTIFACT_ROLE }}
+          aws-region: ${{ env.ARTIFACT_REGION }}
+
+      - name: Keep installers in S3
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
+        run: |
+          compgen -G 'dist/*' > /dev/null || { echo "no installers in dist/" >&2; exit 1; }
+          aws s3 cp dist/ "$ARTIFACT_URI/installers-${{ matrix.target }}/" --recursive --only-show-errors
+          aws s3 ls "$ARTIFACT_URI/installers-${{ matrix.target }}/"
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        continue-on-error: true
         with:
           name: installers-${{ matrix.target }}
           path: dist/*
@@ -198,17 +228,24 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+      id-token: write
     concurrency:
       group: nightly-publish
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          pattern: installers-*
-          path: dist
-          merge-multiple: true
+          role-to-assume: ${{ env.ARTIFACT_ROLE }}
+          aws-region: ${{ env.ARTIFACT_REGION }}
+
+      - name: Fetch every target's installers
+        run: |
+          aws s3 cp "$ARTIFACT_URI/" s3dl/ --recursive --only-show-errors
+          mkdir -p dist
+          find s3dl -type f -exec mv -t dist {} +
+          ls -la dist
 
       - name: Publish
         env:
@@ -224,12 +261,19 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      id-token: write
     steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          pattern: installers-*
-          path: dist
-          merge-multiple: true
+          role-to-assume: ${{ env.ARTIFACT_ROLE }}
+          aws-region: ${{ env.ARTIFACT_REGION }}
+
+      - name: Fetch every target's installers
+        run: |
+          aws s3 cp "$ARTIFACT_URI/" s3dl/ --recursive --only-show-errors
+          mkdir -p dist
+          find s3dl -type f -exec mv -t dist {} +
+          ls -la dist
 
       - name: Combine checksums
         run: |
