@@ -7,7 +7,7 @@ needs a machine of ours.
 
 | Channel | When | Where | Who can download |
 |---|---|---|---|
-| **PR builds** | every pull request | the run's **Artifacts** (kept 14 days) | repo members |
+| **PR builds** | every pull request | the run's **Artifacts** (kept 14 days, best effort: GitHub refuses them while the org's artifact storage is full) and Current AI's S3 artifact bucket | repo members; S3 needs AWS access |
 | **Nightly** | every push to `main` that changes code | the rolling **`nightly` prerelease** | anyone who can see the repo |
 | **Release** | a `v<version>` tag | a **draft** release, published by a person | after Publish |
 
