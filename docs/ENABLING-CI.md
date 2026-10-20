@@ -51,7 +51,8 @@ nightly on *every* push becomes the expensive part. Options then:
       this allow-list:
       ```
       actions/checkout@*, actions/setup-node@*, actions/upload-artifact@*,
-      actions/download-artifact@*, pnpm/action-setup@*, Swatinem/rust-cache@*
+      actions/download-artifact@*, pnpm/action-setup@*, Swatinem/rust-cache@*,
+      aws-actions/configure-aws-credentials@*
       ```
       If the org restricts actions (Org → Settings → Actions), an org owner adds the same list there.
 - [ ] **Workflow permissions**: keep **"Read repository contents and packages permissions"**. The
