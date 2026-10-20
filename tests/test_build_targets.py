@@ -92,10 +92,12 @@ def test_the_default_matrix_builds_only_enabled_targets():
     assert [t["target"] for t in m["include"]] == [t["target"] for t in TARGETS if t["enabled"]]
 
 
-def test_only_linux_is_enabled_until_windows_and_macos_are_proven_locally():
+def test_only_targets_proven_on_a_real_machine_are_enabled():
     """Today's decision, made explicit so flipping a target on is a deliberate, visible change
-    (update this test in the same commit that enables Windows or macOS)."""
-    assert {t["target"] for t in TARGETS if t["enabled"]} == {"linux-x64", "linux-arm64"}
+    (update this test in the same commit that enables one). Linux: the dev host. macOS arm64 and
+    x64: built with tools/build.sh --release-target on a Mac mini (M5 Pro, macOS 27), the arm64
+    app run, its runtime set up and paired. Windows: not yet."""
+    assert {t["target"] for t in TARGETS if t["enabled"]} == {"linux-x64", "linux-arm64", "macos-arm64", "macos-x64"}
 
 
 def test_every_target_says_whether_it_is_enabled():

@@ -1,4 +1,4 @@
-# Building locally (Linux: Debian / Ubuntu first)
+# Building locally (Linux: Debian / Ubuntu; macOS)
 
 Local builds are the primary path. CI (GitHub Actions) comes later and will run these same steps.
 
@@ -33,6 +33,41 @@ cargo install tauri-driver --locked     # only needed for tools/e2e-smoke.py
 ## 3. Node + pnpm
 
 Node ≥ 20 and pnpm. (`npm i -g pnpm` with a user npm prefix if `/usr/local` isn't writable.)
+
+## macOS (Apple silicon; builds both macOS targets)
+
+Proven on macOS 27.0, Apple M5 Pro. Nothing below needs Homebrew.
+
+1. **Command Line Tools** (admin, once). Over SSH, `xcode-select --install` can't open its
+   dialog, so use `softwareupdate`:
+   ```bash
+   softwareupdate -l | grep "Label: Command Line Tools"        # find the exact label
+   sudo softwareupdate -i "Command Line Tools for Xcode 27.0-27.0"
+   xcode-select -p                                             # -> /Library/Developer/CommandLineTools
+   ```
+   Until they're installed, `/usr/bin/python3` is only a placeholder that offers to install them,
+   so nothing that needs Python works yet.
+2. **Rust** (per user): the rustup command in section 2 with `--no-modify-path`, then
+   `rustup target add x86_64-apple-darwin` so one Mac builds both `macos-arm64` and `macos-x64`.
+   `cargo install tauri-cli --version '^2' --locked`.
+3. **Node + pnpm** (per user, no installer): untar the LTS `node-vX-darwin-arm64.tar.gz` from
+   nodejs.org into `~/.local` (symlink `~/.local/node`, put `~/.local/node/bin` on `PATH`), then
+   `corepack install -g pnpm@10.34.4` (the version this repo's lockfile was made with).
+4. Build: `tools/build.sh --release-target macos-arm64` (or `macos-x64`) → `dist/<target>/*.dmg`.
+
+Notes:
+- `tools/build.sh --release-target` sets `CI=true`. Without it, the DMG step runs a Finder
+  AppleScript to lay out the window, which fails with error `-10810` when no one is logged in to
+  the Mac's desktop (a build over SSH). GitHub's runners set `CI=true` themselves.
+- Builds are **ad-hoc signed** (`signingIdentity: "-"` in `tauri.conf.json`), which Apple silicon
+  requires for an app to run at all. There's no Developer ID yet, so a downloaded `.dmg` is
+  blocked by Gatekeeper on first open; see `docs/RELEASING.md`. A Developer ID in
+  `APPLE_SIGNING_IDENTITY` overrides the ad-hoc identity.
+- `tools/check.sh` passes on macOS. It restages the runtime for the host every run, because a
+  `--release-target macos-x64` build leaves the Intel interpreter staged ("Bad CPU type in
+  executable" on Apple silicon).
+- `tools/e2e-smoke.py` is Linux-only (tauri-driver has no macOS WebDriver). On macOS, test the
+  app by hand.
 
 ## glibc / release builds
 

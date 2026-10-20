@@ -6,7 +6,7 @@ The step-by-step plan for enabling `.github/workflows/build.yml` and `check.yml`
 `build/release-workflow`.
 
 **Phase 1 (this plan): Linux only.** linux-x64 and linux-arm64 build on every PR. Every push to
-`main` publishes a **nightly** prerelease. A `v*` tag makes a draft release. Windows and macOS are
+`main` publishes a **nightly** prerelease. A `v*` tag makes a draft release. (macOS has since been enabled, see Cost below.) Windows and macOS were
 declared but disabled, so they cost nothing until you've proven them locally (phase 2, at the end).
 
 Expected time: about 1 hour of clicking, plus watching one ~20-minute first build.
@@ -23,8 +23,13 @@ per target build plus ~2 min of plan and publish:
 | 150 pushes / month | **$21.60** | $262.80 |
 | One merged change incl. ~3 PR builds | $0.58 | $7.01 |
 
-The jump to "all five" is almost entirely the two macOS jobs ($0.062/min). When macOS turns on, a
-nightly on *every* push becomes the expensive part. Options then:
+The jump to "all five" is almost entirely the two macOS jobs ($0.062/min).
+
+**macOS is now enabled** (macos-arm64 and macos-x64 on GitHub's `macos-15` runners, both proven on
+the Mac mini first). With Linux + macOS, each PR build and each push to `main` costs about
+**$1.63** (Linux $0.14 + two macOS jobs at ~12 min × $0.062 = $1.49): about $98/month at 60
+pushes, $244 at 150, and roughly $6.50 per merged change including ~3 PR builds. Raise the Actions
+budget from step 0 accordingly. A nightly on *every* push is now the expensive part. Options:
 - move macOS builds to the Mac mini;
 - or build nightlies on a schedule (once a day) instead of per push. That's a one-line change.
 

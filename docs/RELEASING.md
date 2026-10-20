@@ -46,8 +46,8 @@ One installer set per **OS × CPU architecture**, declared in
 | linux-x64 | ✅ | `ubuntu-22.04` | `.deb`, `.AppImage` | must |
 | linux-arm64 | ✅ | `ubuntu-22.04-arm` | `.deb`, `.AppImage` | nice |
 | windows-x64 | ⏸ until proven locally | `windows-2022` | `-setup.exe` (NSIS), `.msi` | must |
-| macos-arm64 | ⏸ until proven locally | `macos-15` | `.dmg`, `.app.zip` | must |
-| macos-x64 | ⏸ until proven locally | `macos-15` (cross-compiled) | `.dmg`, `.app.zip` | optional |
+| macos-arm64 | ✅ | `macos-15` | `.dmg`, `.app.zip` | must |
+| macos-x64 | ✅ | `macos-15` (cross-compiled) | `.dmg`, `.app.zip` | optional |
 
 There are no CUDA or Metal builds of the GUI. The GUI contains no GPU code. The bundled CLI
 downloads the right llama.cpp build (CPU, CUDA, Vulkan or ROCm; Metal is built into the macOS
@@ -76,8 +76,8 @@ then flip it on.
    `only: windows-x64`. A dispatch builds a disabled target on request, artifacts only. Nothing
    is published.
 4. **Enable it**: set `"enabled": true` in `.github/build-targets.json`, and update
-   `test_only_linux_is_enabled_until_windows_and_macos_are_proven_locally` in the same commit (it
-   exists to make that change deliberate). The next nightly includes it.
+   `test_only_targets_proven_on_a_real_machine_are_enabled` in the same commit (it exists to make
+   that change deliberate). The next nightly includes it.
 5. Once it has been green for a while, add `Build <target>` to `main`'s required checks.
 
 ## Workflows
@@ -110,7 +110,11 @@ replaces the draft's assets instead of failing.
 ## Signing (not set up yet)
 
 Builds are **unsigned** today:
-- macOS: "can't be opened because Apple cannot check it" → right-click → Open.
+- macOS: the app is ad-hoc signed (so it runs on Apple silicon) but not with a Developer ID or
+  notarized. On first open from a downloaded `.dmg`, macOS says it "can't be opened because
+  Apple cannot check it". Since macOS 15, right-click → Open no longer bypasses this. Use
+  **System Settings → Privacy & Security → Open Anyway** (shown after the first attempt), or
+  `xattr -dr com.apple.quarantine /Applications/aipotluck-local-client-gui.app`.
 - Windows SmartScreen: "Windows protected your PC" → More info → Run anyway.
 
 `build.yml` already passes these secrets to the bundler when they exist, and stays unsigned when

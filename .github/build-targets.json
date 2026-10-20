@@ -27,7 +27,7 @@
     },
     {
       "target": "macos-arm64",
-      "enabled": false,
+      "enabled": true,
       "runner": "macos-15",
       "rust_target": "aarch64-apple-darwin",
       "bundles": "app,dmg",
@@ -35,7 +35,7 @@
     },
     {
       "target": "macos-x64",
-      "enabled": false,
+      "enabled": true,
       "runner": "macos-15",
       "rust_target": "x86_64-apple-darwin",
       "bundles": "app,dmg",
