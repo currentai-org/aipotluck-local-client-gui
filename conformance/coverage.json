@@ -24,7 +24,7 @@
     },
     "cli.install_flags.--backend": {
       "status": "implemented",
-      "note": "Set up passes --backend auto (upstream's own detection decides)."
+      "note": "Set up passes --backend auto (upstream's own detection decides: metal on Apple silicon, cpu elsewhere unless a GPU backend is detected)."
     },
     "cli.install_flags.--build-timeout": {
       "status": "not_applicable",
@@ -117,6 +117,10 @@
     "cli.subcommands.list.*": {
       "status": "implemented",
       "note": "Models screen list, via GET /models (same model_ops.list_models)."
+    },
+    "cli.subcommands.login.flags.--server-url": {
+      "status": "todo",
+      "note": "One-click pairing (login with no credential flags, optionally --server-url) is adopted on andrewtergis/cur-4110-one-click-pairing-flow; this branch still pairs with --credentials-file only."
     },
     "cli.subcommands.login.flags.--credentials-file": {
       "status": "implemented",
@@ -233,21 +237,21 @@
       "status": "implemented",
       "note": "Linux is the first tested GUI platform."
     },
-    "pins.llama_version.json.assets.macos-arm64-cpu": {
-      "status": "todo",
-      "note": "macOS/Windows GUI builds not targeted yet."
+    "pins.llama_version.json.assets.macos-arm64-metal": {
+      "status": "implemented",
+      "note": "macos-arm64 GUI target: upstream installs this (Metal-enabled) asset via --backend auto; built and run on a Mac mini."
     },
     "pins.llama_version.json.assets.macos-x64-cpu": {
-      "status": "todo",
-      "note": "macOS/Windows GUI builds not targeted yet."
+      "status": "implemented",
+      "note": "macos-x64 GUI target (CI-built, cross-compiled); upstream installs this asset on Intel Macs."
     },
     "pins.llama_version.json.assets.windows-arm64-cpu": {
-      "status": "todo",
-      "note": "macOS/Windows GUI builds not targeted yet."
+      "status": "not_applicable",
+      "note": "No windows-arm64 GUI target: the bundled Python has no windows-arm64 asset (tests/test_build_targets.py)."
     },
     "pins.llama_version.json.assets.windows-x64-cpu": {
-      "status": "todo",
-      "note": "macOS/Windows GUI builds not targeted yet."
+      "status": "implemented",
+      "note": "windows-x64 GUI target: upstream's installer fetched, verified and ran this asset (llama-server + llama-bench) on a Windows 10 22H2 box."
     },
     "pins.llama_version.json.tag": {
       "status": "implemented",
@@ -277,10 +281,7 @@
       "status": "implemented",
       "note": "Lockstep by construction: the GUI bundles upstream's source at the pinned commit, so upstream's own fetch code and pin files are what run."
     },
-    "pins.newt_version.json.unverified_assets.*": {
-      "status": "todo",
-      "note": "Upstream's newt checksum for this platform is a placeholder, so pairing there fails until upstream fills it in. When it disappears from this list, that platform is unblocked."
-    },
+
     "pins.requires_python": {
       "status": "implemented",
       "note": "Bundled python-build-standalone 3.12 (runtime/python_version.json); tests/test_bundled_python.py asserts it satisfies this."

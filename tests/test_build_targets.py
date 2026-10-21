@@ -43,12 +43,18 @@ def test_every_build_target_has_a_bundled_python_and_a_newt_pin():
         assert t["target"] in newt, f"{t['target']}: no newt asset in upstream's pin"
 
 
-def test_every_build_target_has_a_cpu_llama_asset_upstream_can_install():
-    """The GUI ships one binary per OS x arch; the CPU llama.cpp asset is the floor every device
-    of that kind falls back to, so it must exist for each target."""
+# The llama.cpp asset every device of a target falls back to: CPU, except Apple silicon, where
+# upstream's one prebuilt asset is the Metal build (it has no separate CPU-only one).
+BASELINE_BACKEND = {"macos-arm64": "metal"}
+
+
+def test_every_build_target_has_a_baseline_llama_asset_upstream_can_install():
+    """The GUI ships one binary per OS x arch; the baseline llama.cpp asset is what every device of
+    that kind can install with no GPU detected, so it must exist for each target."""
     llama = json.loads((UPSTREAM / "llama_version.json").read_text())["assets"]
     for t in TARGETS:
-        assert f"{t['target']}-cpu" in llama, f"{t['target']}: no CPU llama.cpp asset upstream"
+        key = f"{t['target']}-{BASELINE_BACKEND.get(t['target'], 'cpu')}"
+        assert key in llama, f"{t['target']}: no {key} llama.cpp asset upstream"
 
 
 def test_the_must_ship_targets_are_all_present():

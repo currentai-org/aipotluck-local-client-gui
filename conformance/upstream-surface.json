@@ -49,10 +49,10 @@
   "cli": {
     "files": {
       "cli.py": {
-        "sha256": "05ca16964a48cd23cf5e532c1c486efc71eb33c7ba1a5eab015f7ea8de655f4e"
+        "sha256": "cf694aa996cdee357983f1569f89ecb72a2c0948c7654619972c5cd4ed40f667"
       },
       "install.py": {
-        "sha256": "746d61a1f00415b4c7f42290f1a5a99fc5be6a0362d1457f380b452879140dcd"
+        "sha256": "4db487cd36047ce6c5be0f2163c141510fa808fe966e1cb4e2fa462dcacbf809"
       }
     },
     "install_choice_sets": {
@@ -61,7 +61,8 @@
         "cpu",
         "cuda",
         "vulkan",
-        "rocm"
+        "rocm",
+        "metal"
       ],
       "--via": [
         "direct"
@@ -85,10 +86,11 @@
           "cpu",
           "cuda",
           "vulkan",
-          "rocm"
+          "rocm",
+          "metal"
         ],
         "default": "auto",
-        "help": "GPU backend to use (default: auto-detect, falls back to cpu)",
+        "help": "GPU backend to use (default: auto-detect, falls back to cpu; Apple-silicon Macs are metal)",
         "names": [
           "--backend"
         ],
@@ -365,7 +367,7 @@
           "--credentials-file": {
             "choices": null,
             "default": null,
-            "help": "Read the pairing JSON ({tunnelId, tunnelSecret, tunnelEndpoint}) from this file instead of pasting it -- the same JSON Settings -> Local Inference's Copy button copies. Mutually exclusive with --tunnel-id/--tunnel-secret/--tunnel-endpoint.",
+            "help": "Read the pairing JSON ({tunnelId, tunnelSecret, tunnelEndpoint}) from this file instead of pairing in a browser -- the same JSON Settings -> Local Inference's Copy button copies. Mutually exclusive with --tunnel-id/--tunnel-secret/--tunnel-endpoint.",
             "names": [
               "--credentials-file"
             ],
@@ -373,10 +375,21 @@
             "takes_value": true,
             "type": "Path"
           },
+          "--server-url": {
+            "choices": null,
+            "default": null,
+            "help": null,
+            "names": [
+              "--server-url"
+            ],
+            "required": false,
+            "takes_value": true,
+            "type": null
+          },
           "--tunnel-endpoint": {
             "choices": null,
             "default": null,
-            "help": "Skip the prompt (scripting only)",
+            "help": "Skip browser pairing (scripting only)",
             "names": [
               "--tunnel-endpoint"
             ],
@@ -387,7 +400,7 @@
           "--tunnel-id": {
             "choices": null,
             "default": null,
-            "help": "Skip the prompt (scripting only); must be given with the other two --tunnel-* flags, and not with --credentials-file",
+            "help": "Skip browser pairing (scripting only); must be given with the other two --tunnel-* flags, and not with --credentials-file",
             "names": [
               "--tunnel-id"
             ],
@@ -398,7 +411,7 @@
           "--tunnel-secret": {
             "choices": null,
             "default": null,
-            "help": "Skip the prompt (scripting only)",
+            "help": "Skip browser pairing (scripting only)",
             "names": [
               "--tunnel-secret"
             ],
@@ -407,7 +420,7 @@
             "type": null
           }
         },
-        "help": "Pair this device with a managed tunnel endpoint",
+        "help": "Pair this device with a managed tunnel endpoint (one-click in a browser by default)",
         "inherits_shared_flags": false
       },
       "logout": {
@@ -556,7 +569,7 @@
         "linux-x64-cuda",
         "linux-x64-rocm",
         "linux-x64-vulkan",
-        "macos-arm64-cpu",
+        "macos-arm64-metal",
         "macos-x64-cpu",
         "windows-arm64-cpu",
         "windows-x64-cpu"
@@ -573,9 +586,7 @@
         "windows-x64"
       ],
       "tag": "1.18.1",
-      "unverified_assets": [
-        "windows-x64"
-      ]
+      "unverified_assets": []
     },
     "requires_python": ">=3.9"
   },
@@ -750,9 +761,9 @@
       "tunnel"
     ]
   },
-  "source_commit": "5a4736e9522fa22fb79112c3dac2e14e3beab538",
+  "source_commit": "c5aff7e56bb5b3d0bef0a15e6c75651bdc180ac4",
   "source_repo": "aitpotluck-local-client",
-  "source_subject": "Merge branch 'andrewtergis/cur-1966-support-for-macos-in-cpu-mode'",
+  "source_subject": "fix(service): report a Windows Scheduled Task's real state, and fail loudly when it can't be registered",
   "tunnel": {
     "argv": [
       {
