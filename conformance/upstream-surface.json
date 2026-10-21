@@ -761,9 +761,9 @@
       "tunnel"
     ]
   },
-  "source_commit": "c5aff7e56bb5b3d0bef0a15e6c75651bdc180ac4",
+  "source_commit": "454d769f3ecb9061090460faf0ba86b45cefb4fc",
   "source_repo": "aitpotluck-local-client",
-  "source_subject": "fix(service): report a Windows Scheduled Task's real state, and fail loudly when it can't be registered",
+  "source_subject": "fix(service): on Windows, llama-server and newt die with the service however it stops",
   "tunnel": {
     "argv": [
       {
