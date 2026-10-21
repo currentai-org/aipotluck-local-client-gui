@@ -52,7 +52,7 @@
         "sha256": "cf694aa996cdee357983f1569f89ecb72a2c0948c7654619972c5cd4ed40f667"
       },
       "install.py": {
-        "sha256": "4db487cd36047ce6c5be0f2163c141510fa808fe966e1cb4e2fa462dcacbf809"
+        "sha256": "c5ce832352e67117556f1f0811789cfd31f1299c8bc32336135d9eead744a043"
       }
     },
     "install_choice_sets": {
@@ -572,7 +572,9 @@
         "macos-arm64-metal",
         "macos-x64-cpu",
         "windows-arm64-cpu",
-        "windows-x64-cpu"
+        "windows-x64-cpu",
+        "windows-x64-cuda",
+        "windows-x64-vulkan"
       ],
       "tag": "b10989",
       "unverified_assets": []
@@ -761,9 +763,9 @@
       "tunnel"
     ]
   },
-  "source_commit": "454d769f3ecb9061090460faf0ba86b45cefb4fc",
+  "source_commit": "71ddfa66fa44477292db9cf5bf5a2b4eccb99ac3",
   "source_repo": "aitpotluck-local-client",
-  "source_subject": "fix(service): on Windows, llama-server and newt die with the service however it stops",
+  "source_subject": "feat(installer): auto-detect a GPU backend on Windows (CUDA, then Vulkan, then CPU)",
   "tunnel": {
     "argv": [
       {
@@ -808,7 +810,7 @@
     "error_prefix": "ERROR:",
     "files": {
       "newt_supervisor.py": {
-        "sha256": "335ce33a2155e921f831a6fc0a9cffb016f085cb9e285a5b05b5486c847846f2"
+        "sha256": "4fcd7d796825f1f907583c480065a496c7359fa132c8abc12b2f79e4e880f58f"
       }
     },
     "flags": [

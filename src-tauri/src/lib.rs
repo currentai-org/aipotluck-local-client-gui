@@ -210,14 +210,33 @@ fn checked_model(model_hf: Option<String>) -> Result<Option<String>, String> {
     }
 }
 
+/// The compute picker's choices (Customize, Linux and Windows): `None` is auto-detect, which is
+/// what upstream's installer does by default. Anything else is refused before it reaches a
+/// command line.
+const PICKER_BACKENDS: [&str; 3] = ["cuda", "vulkan", "cpu"];
+
+fn checked_backend(backend: Option<String>) -> Result<Option<String>, String> {
+    match backend.as_deref().map(str::trim) {
+        None | Some("") | Some("auto") => Ok(None),
+        Some(b) if PICKER_BACKENDS.contains(&b) => Ok(Some(b.to_string())),
+        Some(b) => Err(format!("“{b}” isn’t a compute option. Use CUDA, Vulkan or CPU.")),
+    }
+}
+
 /// What Set up would install, with approximate sizes: the client as unpacked on disk, then
-/// upstream's own choice of llama.cpp build, newt binary and model (sidecar/gui_plan.py).
+/// upstream's own choice of llama.cpp build (for the auto-detected backend, or the one chosen in
+/// Customize), newt binary and model (sidecar/gui_plan.py), plus the compute picker's options.
 #[tauri::command]
-async fn install_plan(state: State<'_, AppState>, model_hf: Option<String>) -> Result<Value, String> {
+async fn install_plan(
+    state: State<'_, AppState>,
+    model_hf: Option<String>,
+    backend: Option<String>,
+) -> Result<Value, String> {
     let model = checked_model(model_hf)?;
+    let backend = checked_backend(backend)?;
     let rt = rt(&state)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let mut plan = rt.plan(model.as_deref(), false)?;
+        let mut plan = rt.plan(model.as_deref(), backend.as_deref(), false)?;
         plan["client"] = json!({ "bytes": rt.client_bytes(), "upstream_sha": rt.upstream_sha });
         Ok(plan)
     })
@@ -231,13 +250,13 @@ async fn install_plan(state: State<'_, AppState>, model_hf: Option<String>) -> R
 async fn model_size(state: State<'_, AppState>, model_hf: String) -> Result<Value, String> {
     let model = checked_model(Some(model_hf))?.ok_or("no model given")?;
     let rt = rt(&state)?;
-    tauri::async_runtime::spawn_blocking(move || Ok(rt.plan(Some(&model), true)?["model"].take()))
+    tauri::async_runtime::spawn_blocking(move || Ok(rt.plan(Some(&model), None, true)?["model"].take()))
         .await
         .map_err(|e| e.to_string())?
 }
 
 /// One click: upstream's installer with its defaults (auto-detected backend, default model
-/// pre-fetched and sized), or with the model chosen in Customize. On a host with no usable service
+/// pre-fetched and sized), or with the model and compute backend chosen in Customize. On a host with no usable service
 /// manager it installs without starting the OS service, and the GUI hosts upstream's service
 /// payload instead.
 #[tauri::command]
@@ -245,13 +264,15 @@ async fn setup_device(
     app: AppHandle,
     state: State<'_, AppState>,
     model_hf: Option<String>,
+    backend: Option<String>,
 ) -> Result<(), String> {
     let model = checked_model(model_hf)?;
+    let backend = checked_backend(backend)?;
     let rt = rt(&state)?;
     let probe = tauri::async_runtime::spawn_blocking(move || rt.probe())
         .await
         .map_err(|e| e.to_string())??;
-    let mut args = vec!["--backend".to_string(), "auto".to_string()];
+    let mut args = vec![format!("--backend={}", backend.as_deref().unwrap_or("auto"))];
     if let Some(m) = model {
         // One token, so the value can never be read as a flag of its own.
         args.push(format!("--model-hf={m}"));
@@ -438,4 +459,23 @@ pub fn run() {
                 stop_hosted(&app.state::<AppState>());
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::checked_backend;
+
+    #[test]
+    fn the_compute_picker_accepts_only_its_three_choices_or_auto() {
+        assert_eq!(checked_backend(None), Ok(None));
+        assert_eq!(checked_backend(Some("auto".into())), Ok(None));
+        assert_eq!(checked_backend(Some(" ".into())), Ok(None));
+        for b in ["cuda", "vulkan", "cpu"] {
+            assert_eq!(checked_backend(Some(b.into())), Ok(Some(b.into())));
+        }
+        // Never reaches the installer's command line: not a choice, or an attempt at a flag.
+        for bad in ["rocm", "metal", "CUDA", "--no-service", "cpu --system"] {
+            assert!(checked_backend(Some(bad.into())).is_err(), "{bad}");
+        }
+    }
 }

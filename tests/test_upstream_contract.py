@@ -259,6 +259,40 @@ def test_install_plan_offline_reports_unknown_sizes_and_never_fails(home: Path):
     assert plan["newt"]["tag"] == json.loads((UPSTREAM / "newt_version.json").read_text())["tag"]
 
 
+@pytest.mark.parametrize("backend", ["cuda", "vulkan", "cpu"])
+def test_a_compute_override_is_planned_and_handed_to_upstream_in_the_form_it_parses(home: Path, backend: str):
+    plan = _plan(home, f"--backend={backend}")
+    # The plan is sized for the build upstream's own resolver picks for that backend on this host:
+    # its exact asset, or (no asset for this OS/arch) a source build -- never a silent other one.
+    assert plan["host"]["backend"] == backend and plan["backends"]["selected"] == backend
+    if not plan["llama_cpp"]["source_build"]:
+        assert plan["llama_cpp"]["asset_key"].endswith(f"-{backend}")
+    # setup_device passes the override as one `--backend=<b>` token; upstream must accept it.
+    parsed = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; sys.path.insert(0, '.');"
+         "from aipotluck.installer.install import build_arg_parser;"
+         f"print(build_arg_parser().parse_args(['--backend={backend}']).backend)"],
+        cwd=UPSTREAM, env=_env(home), capture_output=True, text=True, timeout=30,
+    )
+    assert parsed.returncode == 0, parsed.stderr
+    assert parsed.stdout.strip() == backend
+
+
+def test_the_compute_picker_reports_upstreams_auto_choice_and_every_option(home: Path):
+    plan = _plan(home)
+    picker = plan["backends"]
+    assert picker["auto"] == plan["host"]["backend"] == picker["selected"]
+    llama_pin = json.loads((UPSTREAM / "llama_version.json").read_text())
+    host = plan["host"]
+    if host["os"] in ("linux", "windows"):
+        assert [o["backend"] for o in picker["options"]] == ["cuda", "vulkan", "cpu"]
+        for o in picker["options"]:
+            assert o["available"] == (f"{host['os']}-{host['arch']}-{o['backend']}" in llama_pin["assets"])
+    else:
+        assert picker["options"] == []
+
+
 def test_install_plan_default_model_is_the_one_upstreams_installer_would_pull(home: Path):
     parsed = subprocess.run(
         [sys.executable, "-c",

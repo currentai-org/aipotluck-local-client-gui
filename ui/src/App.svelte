@@ -27,9 +27,12 @@
 	let showPaste = $state(false);
 	let logEl: HTMLPreElement | undefined = $state();
 
-	// Set up's plan: what it will install and how big. `modelHf` is the Customize override ('' =
-	// upstream's default); `planFor` is the override the current plan was sized for.
+	// Set up's plan: what it will install and how big. `modelHf` and `backend` are the Customize
+	// overrides ('' = upstream's default model / auto-detected compute); `planFor` is the pair the
+	// current plan was sized for.
 	let modelHf = $state('');
+	let backend = $state('');
+	const choiceKey = $derived(`${backend}|${modelHf}`);
 	let customizing = $state(false);
 	let plan = $state<InstallPlan | null>(null);
 	let planFor = $state<string | null>(null);
@@ -40,16 +43,24 @@
 	const busy = $derived(app && app.ready ? app.busy : null);
 	const rows = $derived(app && app.ready ? statusRows(app, status) : []);
 	const summary = $derived(combinedStatus(rows, !!(app && app.ready && app.hosted_by_gui)));
-	const planPending = $derived(planFor !== modelHf);
-	const items = $derived(plan ? planItems(plan, planPending ? modelHf : null) : []);
+	const planPending = $derived(planFor !== choiceKey);
+	const modelPending = $derived(planPending && planFor !== null && planFor.split('|').slice(1).join('|') !== modelHf);
+	const items = $derived(
+		plan
+			? planItems(plan, modelPending ? modelHf : null).map((i) =>
+					i.name === 'llama.cpp' && planPending ? { ...i, bytes: null, pending: true } : i
+				)
+			: []
+	);
 	const total = $derived(planTotal(items));
 
 	async function loadPlan() {
 		const seq = ++planSeq;
-		const want = modelHf;
+		const want = choiceKey;
+		const [wantBackend, wantModel] = [backend, modelHf];
 		planError = null;
 		try {
-			const p = await api.installPlan(want);
+			const p = await api.installPlan(wantModel, wantBackend);
 			if (seq !== planSeq) return; // a newer choice superseded this one
 			plan = p;
 			planFor = want;
@@ -60,10 +71,11 @@
 		}
 	}
 
-	function saveSettings(next: string) {
+	function saveSettings(next: { modelHf: string; backend: string }) {
 		customizing = false;
-		if (next === modelHf) return;
-		modelHf = next;
+		if (next.modelHf === modelHf && next.backend === backend) return;
+		modelHf = next.modelHf;
+		backend = next.backend;
 		loadPlan();
 	}
 
@@ -140,6 +152,8 @@
 	{:else if screen === 'setup' && app?.ready && customizing && busy !== 'setup'}
 		<SetupSettings
 			{modelHf}
+			{backend}
+			backends={plan?.backends ?? null}
 			defaultModel={plan?.model.default_id ?? ''}
 			onsave={saveSettings}
 			oncancel={() => (customizing = false)}
@@ -194,7 +208,7 @@
 			</div>
 		{:else}
 			<div class="setup-actions">
-				<button class="btn primary" onclick={() => run(() => api.setupDevice(modelHf))}>
+				<button class="btn primary" onclick={() => run(() => api.setupDevice(modelHf, backend))}>
 					<Icon name="download-2-line" /> Set up
 				</button>
 				<button class="btn secondary" disabled={!plan} onclick={() => (customizing = true)}>

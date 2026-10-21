@@ -251,7 +251,15 @@
     },
     "pins.llama_version.json.assets.windows-x64-cpu": {
       "status": "implemented",
-      "note": "windows-x64 GUI target: upstream's installer fetched, verified and ran this asset (llama-server + llama-bench) on a Windows 10 22H2 box."
+      "note": "windows-x64 GUI target: upstream's installer fetched, verified and ran this asset (llama-server + llama-bench) on a Windows 10 22H2 box. Also the Customize compute picker's CPU option."
+    },
+    "pins.llama_version.json.assets.windows-x64-cuda": {
+      "status": "implemented",
+      "note": "Auto-detected when the NVIDIA driver supports CUDA >= 12.4, or chosen in Customize; the plan sizes it with its cudart companion (~646 MB). Installed and run fully offloaded (CUDA0) on a GTX 1660 Ti, Windows 10."
+    },
+    "pins.llama_version.json.assets.windows-x64-vulkan": {
+      "status": "implemented",
+      "note": "Auto-detected for a GPU without a new-enough NVIDIA driver, or chosen in Customize (~32 MB). Installed and run fully offloaded (Vulkan0) on a GTX 1660 Ti, Windows 10."
     },
     "pins.llama_version.json.tag": {
       "status": "implemented",

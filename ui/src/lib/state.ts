@@ -154,6 +154,31 @@ export type InstallPlan = {
 	};
 	newt: { tag: string | null; file: string | null; bytes: number | null; error?: string };
 	model: { id: string; is_default: boolean; default_id: string; bytes: number | null; files: string[] };
+	/** The compute picker (Linux and Windows): what auto-detect chose, what this plan was sized
+	 * for, and each option's download size. `options` is empty on macOS. */
+	backends?: {
+		auto: string;
+		selected: string;
+		options: { backend: string; available: boolean; bytes: number | null }[];
+	};
+};
+
+export type BackendChoice = 'cuda' | 'vulkan' | 'cpu';
+
+/** The compute picker's names and its one-sentence reason to pick each. */
+export const BACKEND_INFO: Record<BackendChoice, { name: string; why: string }> = {
+	cuda: {
+		name: 'CUDA',
+		why: 'Fastest on NVIDIA graphics cards, especially with long prompts, but needs a recent NVIDIA driver and a much bigger download.'
+	},
+	vulkan: {
+		name: 'Vulkan',
+		why: 'Works on most NVIDIA, AMD and Intel graphics with a small download, and writes replies about as fast as CUDA.'
+	},
+	cpu: {
+		name: 'CPU',
+		why: 'Works on any computer without a graphics card or driver, but is much slower; use it if a GPU option won’t start.'
+	}
 };
 
 /** Decimal units, like Hugging Face and GitHub show them, rounded the way a person would say it. */
@@ -179,7 +204,7 @@ export type PlanItem = {
 	warn?: boolean;
 };
 
-const BACKEND_NAMES: Record<string, string> = { cpu: 'CPU', cuda: 'CUDA', vulkan: 'Vulkan', rocm: 'ROCm' };
+const BACKEND_NAMES: Record<string, string> = { cpu: 'CPU', cuda: 'CUDA', vulkan: 'Vulkan', rocm: 'ROCm', metal: 'Metal' };
 
 /**
  * One line per thing Set up puts on this computer, in the order it happens. `pendingModel` is the
@@ -194,8 +219,17 @@ export function planItems(plan: InstallPlan, pendingModel: string | null = null)
 		name: 'llama.cpp',
 		detail: `Inference server · ${llama.tag ?? '?'} · ${BACKEND_NAMES[backend] ?? backend} build`,
 		bytes: llama.bytes,
-		note: 'download; larger once unpacked'
+		note:
+			backend === 'cuda' && plan.host.os === 'windows'
+				? 'download, including NVIDIA’s CUDA runtime; larger once unpacked'
+				: 'download; larger once unpacked'
 	};
+	// A GPU build far bigger than the alternative (Windows CUDA: ~650 MB vs Vulkan's ~32 MB) says so
+	// before Set up, and where to change it.
+	const vulkan = plan.backends?.options.find((o) => o.backend === 'vulkan');
+	if (backend === 'cuda' && llama.bytes !== null && vulkan?.available && vulkan.bytes !== null && llama.bytes > 4 * vulkan.bytes) {
+		llamaItem.note = `${llamaItem.note}. Vulkan is ~${formatBytes(vulkan.bytes)}: choose it in Customize`;
+	}
 	if (llama.source_build) {
 		llamaItem.bytes = null;
 		llamaItem.note = 'built from source on this computer';

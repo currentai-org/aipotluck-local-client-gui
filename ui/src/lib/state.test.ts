@@ -12,7 +12,8 @@ import {
 	type Row,
 	type AppState,
 	type InstallPlan,
-	type Probe
+	type Probe,
+	BACKEND_INFO
 } from './state';
 
 const probe = (over: Partial<Probe> = {}): Probe => ({
@@ -183,6 +184,38 @@ describe('formatBytes', () => {
 });
 
 describe('planItems', () => {
+	const windowsCuda = (): InstallPlan => {
+		const p = plan();
+		p.host = { os: 'windows', arch: 'x64', backend: 'cuda' };
+		p.llama_cpp = { ...p.llama_cpp, asset_key: 'windows-x64-cuda', file: 'llama-b10989-bin-win-cuda-12.4-x64.zip', bytes: 645_642_643 };
+		p.backends = {
+			auto: 'cuda',
+			selected: 'cuda',
+			options: [
+				{ backend: 'cuda', available: true, bytes: 645_642_643 },
+				{ backend: 'vulkan', available: true, bytes: 31_691_031 },
+				{ backend: 'cpu', available: true, bytes: 18_428_704 }
+			]
+		};
+		return p;
+	};
+
+	it('a Windows CUDA plan counts the CUDA runtime and points at the much smaller Vulkan build', () => {
+		const llama = planItems(windowsCuda())[1];
+		expect(llama.detail).toContain('CUDA build');
+		expect(llama.bytes).toBe(645_642_643);
+		expect(llama.note).toMatch(/CUDA runtime/);
+		expect(llama.note).toMatch(/Vulkan is ~32 MB: choose it in Customize/);
+	});
+
+	it('a Vulkan or CPU plan makes no such suggestion', () => {
+		const p = windowsCuda();
+		p.host.backend = 'vulkan';
+		p.llama_cpp = { ...p.llama_cpp, asset_key: 'windows-x64-vulkan', bytes: 31_691_031 };
+		expect(planItems(p)[1].note).toBe('download; larger once unpacked');
+		expect(planItems(plan())[1].note).toBe('download; larger once unpacked');
+	});
+
 	it('lists client, llama.cpp, newt and model, in install order, with their sizes', () => {
 		const items = planItems(plan());
 		expect(items.map((i) => i.name)).toEqual(['Client', 'llama.cpp', 'newt', 'Model (starter)']);
@@ -244,5 +277,15 @@ describe('model id', () => {
 	it('nothing that could read as a flag or a path is accepted as a model id', () => {
 		for (const bad of ['--system', '-x/y', 'org/--x', '../etc', 'org/../x', '/abs', 'org/a/b', 'org/r:Q4 x', 'org/r:', 'name', ''])
 			expect(isModelId(bad), bad).toBe(false);
+	});
+});
+
+describe('BACKEND_INFO', () => {
+	it('has a one-sentence reason for each compute choice', () => {
+		for (const [key, info] of Object.entries(BACKEND_INFO)) {
+			expect(info.why, key).toMatch(/^[^.]+\.$/); // exactly one sentence
+			expect(info.why.length, key).toBeLessThan(140);
+		}
+		expect(Object.keys(BACKEND_INFO)).toEqual(['cuda', 'vulkan', 'cpu']);
 	});
 });
