@@ -102,8 +102,22 @@ def test_only_targets_proven_on_a_real_machine_are_enabled():
     """Today's decision, made explicit so flipping a target on is a deliberate, visible change
     (update this test in the same commit that enables one). Linux: the dev host. macOS arm64 and
     x64: built with tools/build.sh --release-target on a Mac mini (M5 Pro, macOS 27), the arm64
-    app run, its runtime set up and paired. Windows: not yet."""
-    assert {t["target"] for t in TARGETS if t["enabled"]} == {"linux-x64", "linux-arm64", "macos-arm64", "macos-x64"}
+    app run, its runtime set up and paired. Windows x64: built the same way on a Windows 10 22H2
+    PC, installed as a standard user, set up on CPU, CUDA and Vulkan, paired, and the background
+    logon task confirmed at the desktop."""
+    assert {t["target"] for t in TARGETS if t["enabled"]} == {
+        "linux-x64", "linux-arm64", "windows-x64", "macos-arm64", "macos-x64"
+    }
+
+
+def test_windows_ships_the_nsis_installer_only():
+    """The MSI is left out until it has been built once: WiX's light.exe needs the Windows
+    Installer service, which the remote session used to prove the Windows build couldn't reach, so
+    no MSI has ever been produced. The NSIS installer is the one tested end to end. A failing MSI
+    step would fail the Windows job and, with it, every nightly (they publish only when all
+    enabled targets build). To add it: one `only: windows-x64` dispatch with "nsis,msi" first."""
+    win = next(t for t in TARGETS if t["target"] == "windows-x64")
+    assert win["bundles"] == "nsis"
 
 
 def test_every_target_says_whether_it_is_enabled():
@@ -111,14 +125,20 @@ def test_every_target_says_whether_it_is_enabled():
         assert isinstance(t.get("enabled"), bool), f"{t['target']}: 'enabled' must be true or false"
 
 
-def test_a_disabled_target_can_still_be_built_on_request():
-    """workflow_dispatch `only` and tools/build.sh --release-target both rely on this."""
-    disabled = [t["target"] for t in TARGETS if not t["enabled"]]
-    assert disabled
-    for name in disabled:
-        r = _run("--matrix", "--only", name)
+def test_a_disabled_target_can_still_be_built_on_request(monkeypatch):
+    """workflow_dispatch `only` and tools/build.sh --release-target both rely on this. Every
+    target is enabled today, so the check runs against a copy of the list with one switched off."""
+    sys.path.insert(0, str(TOOL.parent))
+    import release_version
+
+    some_off = [dict(t, enabled=(t["target"] != "windows-x64")) for t in TARGETS]
+    monkeypatch.setattr(release_version, "targets", lambda: some_off)
+    assert "windows-x64" not in [t["target"] for t in release_version.matrix()["include"]]
+    assert [t["target"] for t in release_version.matrix("windows-x64")["include"]] == ["windows-x64"]
+    for t in TARGETS:  # and every real target is buildable by name
+        r = _run("--matrix", "--only", t["target"])
         assert r.returncode == 0, r.stderr
-        assert [t["target"] for t in json.loads(r.stdout)["include"]] == [name]
+        assert [x["target"] for x in json.loads(r.stdout)["include"]] == [t["target"]]
 
 
 def test_an_unknown_target_is_refused_rather_than_building_nothing():

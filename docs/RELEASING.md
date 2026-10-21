@@ -45,9 +45,14 @@ One installer set per **OS × CPU architecture**, declared in
 |---|---|---|---|---|
 | linux-x64 | ✅ | `ubuntu-22.04` | `.deb`, `.AppImage` | must |
 | linux-arm64 | ✅ | `ubuntu-22.04-arm` | `.deb`, `.AppImage` | nice |
-| windows-x64 | ⏸ until proven locally | `windows-2022` | `-setup.exe` (NSIS), `.msi` | must |
+| windows-x64 | ✅ | `windows-2022` | `-setup.exe` (NSIS) | must |
 | macos-arm64 | ✅ | `macos-15` | `.dmg`, `.app.zip` | must |
 | macos-x64 | ✅ | `macos-15` (cross-compiled) | `.dmg`, `.app.zip` | optional |
+
+Windows ships the NSIS installer only. The MSI (`nsis,msi`) has never been built: WiX's `light.exe`
+needs the Windows Installer service, which the remote session used to prove the Windows build
+couldn't reach. Try it with one `only: windows-x64` dispatch before adding it, since a failing MSI
+step would fail every nightly.
 
 There are no CUDA or Metal builds of the GUI. The GUI contains no GPU code. The bundled CLI
 downloads the right llama.cpp build (CPU, CUDA, Vulkan or ROCm; Metal is built into the macOS
