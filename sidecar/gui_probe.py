@@ -75,6 +75,13 @@ def probe(install_dir: Path | None) -> dict:
             service_state = {"state": status.state.value, "detail": status.detail}
         except Exception as exc:  # report, never crash the probe
             service_state = {"state": "unknown", "detail": str(exc)}
+        # Windows: Task Scheduler is always present, but it refuses to register a task for a
+        # non-interactive logon (SSH, some remote/kiosk sessions). Upstream's installer now says so
+        # and leaves no task behind; after an install, "no task" therefore means "this session
+        # can't have one", and the GUI hosts the service itself, as it does with no systemd.
+        if os_name == "windows" and installed and service_state and service_state["state"] == "not_installed":
+            usable = False
+            usable_detail = "Task Scheduler didn't register the service for this session; the app runs it while open"
 
     return {
         "os": os_name,

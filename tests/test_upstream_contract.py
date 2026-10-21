@@ -49,6 +49,15 @@ def _env(home: Path) -> dict:
         # No service manager in tests: upstream's systemd backend no-ops when systemctl is absent.
         PATH="/usr/bin/false-dir-only",
     )
+    if sys.platform == "win32":
+        # Upstream's Windows layout reads %LOCALAPPDATA%; keep it inside the test home. PATH must
+        # keep System32 (python.exe needs its DLLs, and schtasks lives there).
+        env.update(
+            USERPROFILE=str(home),
+            LOCALAPPDATA=str(home / "AppData" / "Local"),
+            APPDATA=str(home / "AppData" / "Roaming"),
+            PATH=os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32"),
+        )
     return env
 
 
@@ -62,12 +71,16 @@ def _cfg(home: Path) -> Path:
     written out independently here so the probe is checked against it rather than against itself."""
     if sys.platform == "darwin":
         return home / "Library" / "Application Support" / "aipotluck" / "config"
+    if sys.platform == "win32":
+        return home / "AppData" / "Local" / "aipotluck" / "config"
     return home / ".config" / "aipotluck"
 
 
 def _logs(home: Path) -> Path:
     if sys.platform == "darwin":
         return home / "Library" / "Logs" / "aipotluck"
+    if sys.platform == "win32":
+        return home / "AppData" / "Local" / "aipotluck" / "logs"
     return home / ".local" / "state" / "aipotluck" / "logs"
 
 
@@ -92,8 +105,25 @@ def test_probe_reports_upstreams_own_layout_and_a_fresh_machine_as_not_installed
     assert probe["logged_in"] is False
     # The probe must place runtime.json exactly where upstream's own CLI reads it from.
     assert probe["runtime_json"] == str(_cfg(home) / "runtime.json")
-    # Linux: no systemctl on PATH in this test. macOS: launchd is always there (upstream assumes so).
-    assert probe["service_manager_usable"] is (sys.platform == "darwin")
+    # Linux: no systemctl on PATH in this test. macOS/Windows: launchd/Task Scheduler are always
+    # there, and before anything is installed the probe takes them as usable.
+    assert probe["service_manager_usable"] is (sys.platform in ("darwin", "win32"))
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows Task Scheduler")
+def test_an_installed_windows_device_with_no_scheduled_task_is_hosted_by_the_app(home: Path):
+    """Upstream now refuses to report a task it couldn't register (a non-interactive logon). After
+    an install, no task means this session can't have one, so the GUI must host the service --
+    otherwise nothing runs it at all."""
+    cfg = _cfg(home)
+    cfg.mkdir(parents=True)
+    binary = home / "llama-server.exe"
+    binary.write_text("")
+    (cfg / "runtime.json").write_text(json.dumps({"llama_cpp": {"server_binary": str(binary)}, "logged_in": False}))
+    probe = _layout(home)
+    assert probe["installed"] is True
+    assert probe["service"]["state"] == "not_installed"
+    assert probe["service_manager_usable"] is False
 
 
 def test_probe_sees_an_install_only_when_the_llama_server_binary_really_exists(home: Path):
