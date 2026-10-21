@@ -59,7 +59,11 @@ downloads the right llama.cpp build (CPU, CUDA, Vulkan or ROCm; Metal is built i
 asset) on the user's machine, so one binary per OS × arch covers every GPU.
 
 A target is only allowed in the file if the bundled Python *and* upstream's newt pin both have an
-asset for it (`tests/test_build_targets.py`). That's why `windows-arm64` isn't there. Linux builds
+asset for it (`tests/test_build_targets.py`). That's why `windows-arm64` isn't there: llama.cpp and
+python-build-standalone both publish Windows ARM64 builds, but newt doesn't (x64 only, through
+1.19.0), and without newt the app can't pair. Windows 11 on ARM can run the x64 installer under its
+built-in x64 emulation, with llama.cpp emulated too (so slower). That path is untested. Revisit
+when newt ships a `windows_arm64` binary. Linux builds
 run on Ubuntu **22.04** so the binary runs on 22.04 and newer. The run summary prints each Linux
 build's glibc floor.
 
