@@ -19,10 +19,10 @@
     },
     {
       "target": "windows-x64",
-      "enabled": false,
+      "enabled": true,
       "runner": "windows-2022",
       "rust_target": "x86_64-pc-windows-msvc",
-      "bundles": "nsis,msi",
+      "bundles": "nsis",
       "priority": "must"
     },
     {

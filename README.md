@@ -6,7 +6,8 @@ A desktop app that turns this computer into a local inference server for
 bundles that CLI's own code and a Python to run it with, so the llama.cpp and newt binaries, their
 pins and checksums, the background service, and the pairing are exactly the CLI's.
 
-**Status: v0.1, Linux (Debian/Ubuntu) and macOS (Apple silicon and Intel, unsigned).** Windows isn't built yet.
+**Status: v0.1, Linux (Debian/Ubuntu), Windows 10/11 x64 and macOS (Apple silicon and Intel). macOS
+and Windows builds are unsigned.**
 
 ## Using it
 
@@ -17,9 +18,11 @@ pins and checksums, the background service, and the pairing are exactly the CLI'
    choose **Paste the code instead** and paste the code from **Settings → Local Inference → Add a
    managed server → Pair → Copy**.)
 
-The server keeps running in the background (a systemd user service) after the window closes,
-exactly like a CLI install. The `aipotluck-local-client` command is installed too, for anyone who
-wants it.
+The server keeps running in the background after the window closes (a systemd user service on
+Linux, a launchd agent on macOS, a logon Scheduled Task on Windows), exactly like a CLI install.
+Set up also puts the `aipotluck-local-client` command on your PATH, for you only and with no admin
+needed, so the app and the command line can be used interchangeably. Open a new terminal after Set
+up to use it. Uninstall removes it again.
 
 ## Building
 
@@ -33,9 +36,10 @@ tools/check.sh            # the merge gate
 ```
 
 Installers are built by GitHub Actions (`.github/workflows/build.yml`). Linux x64 and arm64 and
-macOS arm64 and x64 build today; Windows is declared and switches on once proven locally. Every push to `main`
+Windows x64 and macOS arm64 and x64 build today. Every push to `main`
 updates the **nightly** prerelease, and a `v*.*.*` tag makes a draft release. See
-[docs/RELEASING.md](docs/RELEASING.md). To build any target the way CI does:
+[docs/RELEASING.md](docs/RELEASING.md); `tools/release.sh prepare|tag <version>` cuts one. To build
+any target the way CI does:
 `tools/build.sh --release-target <target>`.
 
 ## Layout

@@ -3,12 +3,15 @@
 
 Run with the bundled interpreter from inside the unpacked upstream checkout:
 
-    python gui_plan.py [--model-hf REPO[:QUANT]] [--model-only]
+    python gui_plan.py [--model-hf REPO[:QUANT]] [--backend auto|cpu|cuda|vulkan] [--model-only]
 
 Prints one JSON object on stdout. It never writes anything and downloads nothing. Every decision
 is upstream's own:
-- which llama.cpp build: `build_strategy.resolve_install_strategy` (and `build_cache` for a host
-  that needs a custom build), the same calls `install.run_install` makes;
+- which llama.cpp build: `platform_detect.detect_host_profile` for the backend (auto-detected, or
+  the Customize override passed as `--backend`, exactly what Set up will pass to `install`), then
+  `build_strategy.resolve_install_strategy` (and `build_cache` for a host that needs a custom
+  build), the same calls `install.run_install` makes. An asset's `companions` (Windows CUDA's
+  runtime DLLs) are counted in its size, since `install` downloads them too;
 - which newt binary: `newt_fetch.resolve_newt_asset`;
 - the default model: `install.DEFAULT_MODEL_HF`;
 - the model's size: `model_preflight.remote_model_bytes`, which mirrors llama.cpp's own `-hf`
@@ -34,7 +37,7 @@ sys.path.insert(0, os.getcwd())
 
 from aipotluck.installer import build_cache, build_strategy, fetch, model_preflight, newt_fetch  # noqa: E402
 from aipotluck.installer.install import DEFAULT_MODEL_HF, REPO_ROOT  # noqa: E402
-from aipotluck.installer.platform_detect import detect_host_profile  # noqa: E402
+from aipotluck.installer.platform_detect import detect_gpu_backend, detect_host_profile  # noqa: E402
 
 _TIMEOUT_SECONDS = 10.0
 
@@ -83,12 +86,43 @@ def plan_llama(profile) -> dict:
         key, entry = match
         out.update(asset_key=key, file=entry["file"], bytes=_content_length(_release_url(custom_manifest, entry["file"])))
         return out
-    out.update(
-        asset_key=strategy.asset_key,
-        file=strategy.asset_entry["file"],
-        bytes=_content_length(_release_url(manifest, strategy.asset_entry["file"])),
-    )
+    out.update(asset_key=strategy.asset_key, file=strategy.asset_entry["file"], bytes=_asset_bytes(manifest, strategy.asset_entry))
     return out
+
+
+def _asset_bytes(manifest: dict, entry: dict) -> int | None:
+    """The asset plus its companions, or None if any part can't be measured (a partial sum would
+    understate exactly the large download this estimate exists to warn about)."""
+    total = 0
+    for f in [entry["file"], *(c["file"] for c in entry.get("companions", []))]:
+        size = _content_length(_release_url(manifest, f))
+        if size is None:
+            return None
+        total += size
+    return total
+
+
+# The choices Customize offers on Linux and Windows. macOS has one build (Metal or CPU) and no picker.
+PICKER_BACKENDS = ("cuda", "vulkan", "cpu")
+
+
+def plan_backends(profile) -> dict:
+    """What the compute picker shows: the auto-detected backend, and for each picker option
+    whether this OS/arch has a prebuilt llama.cpp build for it and how big that download is."""
+    manifest = fetch.load_version_manifest(REPO_ROOT / "llama_version.json")
+    auto = detect_gpu_backend(profile.os_name, profile.arch, "auto")
+    options = []
+    if profile.os_name in ("linux", "windows"):
+        for backend in PICKER_BACKENDS:
+            entry = manifest["assets"].get(f"{profile.os_name}-{profile.arch}-{backend}")
+            options.append(
+                {
+                    "backend": backend,
+                    "available": entry is not None,
+                    "bytes": _asset_bytes(manifest, entry) if entry else None,
+                }
+            )
+    return {"auto": auto, "selected": profile.backend, "options": options}
 
 
 def plan_newt(profile) -> dict:
@@ -119,16 +153,18 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-hf", default=None)
     parser.add_argument("--model-only", action="store_true", help="size just the model (for Add)")
+    parser.add_argument("--backend", default="auto", choices=("auto",) + PICKER_BACKENDS)
     args = parser.parse_args()
     if args.model_only:
         print(json.dumps({"model": plan_model(args.model_hf)}))
         return 0
-    profile = detect_host_profile("auto")
+    profile = detect_host_profile(args.backend)
     print(
         json.dumps(
             {
                 "host": {"os": profile.os_name, "arch": profile.arch, "backend": profile.backend},
                 "llama_cpp": plan_llama(profile),
+                "backends": plan_backends(profile),
                 "newt": plan_newt(profile),
                 "model": plan_model(args.model_hf),
             }

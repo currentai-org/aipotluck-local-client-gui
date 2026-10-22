@@ -50,7 +50,10 @@ mod tests {
             parse("bartowski/Qwen2.5-0.5B-Instruct-GGUF:Q4_K_M").as_deref(),
             Some("bartowski/Qwen2.5-0.5B-Instruct-GGUF:Q4_K_M")
         );
-        assert_eq!(parse("  unsloth/Qwen3-4B-GGUF \n").as_deref(), Some("unsloth/Qwen3-4B-GGUF"));
+        assert_eq!(
+            parse("  unsloth/Qwen3-4B-GGUF \n").as_deref(),
+            Some("unsloth/Qwen3-4B-GGUF")
+        );
         assert!(parse("ggml-org/gemma-3-1b-it-GGUF:q8_0").is_some());
     }
 

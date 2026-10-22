@@ -8,9 +8,9 @@
 #   workflow_dispatch         build; `only` picks one target -- even a DISABLED one -- so a new
 #                             platform can be tried in CI without enabling it for every push
 #
-# Only enabled targets build by default (Linux today). Windows and macOS are declared but disabled
-# until they've been proven locally with `tools/build.sh --release-target <t>`; then flip
-# "enabled" in .github/build-targets.json. See docs/RELEASING.md.
+# Only enabled targets build by default: Linux, Windows and macOS today, each switched on only after
+# it was proven locally with `tools/build.sh --release-target <t>` (flip "enabled" in
+# .github/build-targets.json). See docs/RELEASING.md.
 #
 # GPU support is not a build dimension: one binary per OS x CPU arch covers CUDA/Metal/Vulkan/ROCm,
 # because the bundled CLI downloads the matching llama.cpp asset on the user's machine at setup.
@@ -293,7 +293,9 @@ jobs:
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --draft \
-              --title "aipotluck-local-client-gui $VERSION" \
-              --notes "Unsigned build. See SHA256SUMS to verify downloads. Built from ${GITHUB_SHA}."
+            # --generate-notes: GitHub lists the PRs merged since the previous release, under
+            # the note below (tools/release.sh makes the tag).
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+              --title "aipotluck-local-client-gui $VERSION" --generate-notes \
+              --notes "Unsigned build. See SHA256SUMS to verify downloads. Built from ${GITHUB_SHA}. First open on macOS: System Settings -> Privacy & Security -> Open Anyway. On Windows: More info -> Run anyway."
           fi

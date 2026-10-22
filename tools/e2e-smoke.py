@@ -21,8 +21,13 @@ What it does, through the actual window (WebDriver via tauri-driver -> WebKitWeb
      is added (progress panel shown while it downloads and measures); Benchmark scores the unscored ones; one is
      deleted through its confirm row (skipped with --skip-models)
   7. Unpair -> back to the pair screen, runtime.json logged out
+  4b. a new login shell finds the `aipotluck-local-client` command on PATH and runs it
   8. the manual fallback: "Paste the code instead" -> type a pairing JSON -> Pair -> `cli login
      --credentials-file` -> paired, temp file removed -> Unpair
+  9. Uninstall (footer) -> the dialog shows GUI files ticked and locked, CLI files ticked, model
+     cache unticked -> tick the model cache -> Confirm -> the app quits by itself, and the service,
+     llama.cpp, config, the CLI shim and its PATH entry, the GUI's runtime and every downloaded
+     model are gone
 Screenshots of every step go to build/e2e/.
 
 The window lives on a private Xvfb display, never the desktop, even when DISPLAY is set (a
@@ -305,6 +310,20 @@ def main() -> int:
             assert cached == [f"models--{repo}"], f"installer pulled {cached}, not only {model}"
             steps.append(f"upstream pulled and sized exactly the customized model, and nothing else")
 
+        # The CLI is usable from a terminal too: a NEW login shell finds `aipotluck-local-client` on
+        # PATH (the installer added ~/.local/bin to the shell startup files) and it runs, against the
+        # same install the window shows.
+        shell = subprocess.run(
+            # --help, not status: `status` talks to the real port 8069, which on a dev machine is
+            # its own install. --help still runs the bundled Python against the bundled CLI.
+            ["bash", "-lc", "command -v aipotluck-local-client && aipotluck-local-client --help"],
+            env={"HOME": str(home), "PATH": "/usr/bin:/bin"},
+            capture_output=True, text=True, timeout=60)
+        found = shell.stdout.splitlines()[0] if shell.stdout else ""
+        assert found == str(home / ".local" / "bin" / "aipotluck-local-client"), (shell.stdout, shell.stderr)
+        assert shell.returncode == 0 and "uninstall" in shell.stdout, (shell.stdout, shell.stderr)
+        steps.append("a new login shell finds `aipotluck-local-client` on PATH and runs it")
+
         # One-click is the default; the paste box stays tucked away until asked for.
         page = wd.text()
         assert "Pair in your browser".lower() in page.lower(), f"one-click is not offered:\n{page}"
@@ -487,6 +506,51 @@ def main() -> int:
         wd.click_button_when_enabled("Unpair")
         wd.wait_for("Pair with AI Potluck", 120, "8-unpair")
         steps.append("manual fallback: pasted code paired via `cli login --credentials-file`; temp file removed; unpaired")
+
+        # Disabled while a task (the unpair just above) is still finishing.
+        end = time.time() + 30
+        while not wd.js("const b = document.querySelector('footer button.uninstall'); return !!b && !b.disabled;"):
+            assert time.time() < end, "Uninstall stayed disabled"
+            time.sleep(0.5)
+        wd.click_button("Uninstall")
+        wd.wait_for("Uninstall AI Potluck?", 10, "9-dialog"); wd.shot("9-uninstall-dialog")
+        boxes = wd.js("return [...document.querySelectorAll('dialog input[type=checkbox]')]"
+                      ".map(b => [b.closest('label').innerText.trim(), b.checked, b.disabled])")
+        assert boxes == [["GUI files", True, True], ["CLI files", True, False], ["Model cache", False, False]], boxes
+        wd.click_css("dialog label:nth-of-type(3) input")
+        assert "every downloaded model" in wd.text()
+        cached_before = sorted(p.name for p in (home / ".cache" / "huggingface" / "hub").glob("models--*"))
+        assert cached_before, "no models cached before uninstall"
+        wd.click_button("Confirm")
+        # The app quits by itself: the WebDriver session stops answering.
+        end = time.time() + 300
+        gone = False
+        while time.time() < end:
+            try:
+                wd.text()
+            except Exception:
+                gone = True
+                break
+            time.sleep(1)
+        assert gone, "the app was still open 300s after Confirm"
+        wd.sid = None
+        time.sleep(5)  # the detached cleanup runs once the app has exited
+        leftovers = [p for p in (
+            home / ".local" / "share" / "aipotluck",
+            home / ".config" / "aipotluck",
+            home / ".local" / "state" / "aipotluck",
+            home / ".local" / "bin" / "aipotluck-local-client",
+            home / ".config" / "systemd" / "user" / "aipotluck.service",
+        ) if p.exists() and (p.is_file() or any(p.iterdir()))]
+        for rc in (".profile", ".bashrc", ".bash_profile", ".zshenv"):
+            if (home / rc).exists() and "aipotluck-local-client" in (home / rc).read_text():
+                leftovers.append(home / rc)
+        assert not leftovers, f"left behind: {leftovers}"
+        cached_after = sorted(p.name for p in (home / ".cache" / "huggingface" / "hub").glob("models--*")
+                              if any(p.rglob("*.gguf")))
+        assert not cached_after, f"models still cached: {cached_after}"
+        steps.append(f"uninstalled from the footer with the model cache ticked: app quit by itself; service, "
+                     f"CLI install, GUI runtime and {len(cached_before)} cached model(s) removed")
     except Exception as e:
         print("E2E FAILED:", e, file=sys.stderr)
         for s in steps:

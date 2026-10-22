@@ -24,7 +24,7 @@
     },
     "cli.install_flags.--backend": {
       "status": "implemented",
-      "note": "Set up passes --backend auto (upstream's own detection decides)."
+      "note": "Set up passes --backend auto (upstream's own detection decides: metal on Apple silicon, cpu elsewhere unless a GPU backend is detected)."
     },
     "cli.install_flags.--build-timeout": {
       "status": "not_applicable",
@@ -118,6 +118,10 @@
       "status": "implemented",
       "note": "Models screen list, via GET /models (same model_ops.list_models)."
     },
+    "cli.subcommands.login.flags.--server-url": {
+      "status": "todo",
+      "note": "One-click pairing (login with no credential flags, optionally --server-url) is adopted on andrewtergis/cur-4110-one-click-pairing-flow; this branch still pairs with --credentials-file only."
+    },
     "cli.subcommands.login.flags.--credentials-file": {
       "status": "implemented",
       "note": "The manual fallback ('Paste the code instead', or a code found on the clipboard) writes the JSON to a 0600 file and runs `cli login --credentials-file`."
@@ -152,6 +156,10 @@
     "cli.subcommands.remove.*": {
       "status": "implemented",
       "note": "Delete icon per model, confirmed on the row, via DELETE /models (same model_ops.remove)."
+    },
+    "cli.subcommands.uninstall.*": {
+      "status": "implemented",
+      "note": "Footer Uninstall button -> confirmation dialog. 'CLI files' runs `cli uninstall --yes` (+ --remove-models with 'Model cache'); 'Model cache' alone runs `--models-only`. The GUI then deletes its own runtime/webview data and quits."
     },
     "cli.subcommands.status.*": {
       "status": "implemented",
@@ -237,21 +245,29 @@
       "status": "implemented",
       "note": "Linux is the first tested GUI platform."
     },
-    "pins.llama_version.json.assets.macos-arm64-cpu": {
-      "status": "todo",
-      "note": "macOS/Windows GUI builds not targeted yet."
+    "pins.llama_version.json.assets.macos-arm64-metal": {
+      "status": "implemented",
+      "note": "macos-arm64 GUI target: upstream installs this (Metal-enabled) asset via --backend auto; built and run on a Mac mini."
     },
     "pins.llama_version.json.assets.macos-x64-cpu": {
-      "status": "todo",
-      "note": "macOS/Windows GUI builds not targeted yet."
+      "status": "implemented",
+      "note": "macos-x64 GUI target (CI-built, cross-compiled); upstream installs this asset on Intel Macs."
     },
     "pins.llama_version.json.assets.windows-arm64-cpu": {
-      "status": "todo",
-      "note": "macOS/Windows GUI builds not targeted yet."
+      "status": "not_applicable",
+      "note": "No windows-arm64 GUI target: the bundled Python has no windows-arm64 asset (tests/test_build_targets.py)."
     },
     "pins.llama_version.json.assets.windows-x64-cpu": {
-      "status": "todo",
-      "note": "macOS/Windows GUI builds not targeted yet."
+      "status": "implemented",
+      "note": "windows-x64 GUI target: upstream's installer fetched, verified and ran this asset (llama-server + llama-bench) on a Windows 10 22H2 box. Also the Customize compute picker's CPU option."
+    },
+    "pins.llama_version.json.assets.windows-x64-cuda": {
+      "status": "implemented",
+      "note": "Auto-detected when the NVIDIA driver supports CUDA >= 12.4, or chosen in Customize; the plan sizes it with its cudart companion (~646 MB). Installed and run fully offloaded (CUDA0) on a GTX 1660 Ti, Windows 10."
+    },
+    "pins.llama_version.json.assets.windows-x64-vulkan": {
+      "status": "implemented",
+      "note": "Auto-detected for a GPU without a new-enough NVIDIA driver, or chosen in Customize (~32 MB). Installed and run fully offloaded (Vulkan0) on a GTX 1660 Ti, Windows 10."
     },
     "pins.llama_version.json.tag": {
       "status": "implemented",
@@ -281,10 +297,7 @@
       "status": "implemented",
       "note": "Lockstep by construction: the GUI bundles upstream's source at the pinned commit, so upstream's own fetch code and pin files are what run."
     },
-    "pins.newt_version.json.unverified_assets.*": {
-      "status": "todo",
-      "note": "Upstream's newt checksum for this platform is a placeholder, so pairing there fails until upstream fills it in. When it disappears from this list, that platform is unblocked."
-    },
+
     "pins.requires_python": {
       "status": "implemented",
       "note": "Bundled python-build-standalone 3.12 (runtime/python_version.json); tests/test_bundled_python.py asserts it satisfies this."

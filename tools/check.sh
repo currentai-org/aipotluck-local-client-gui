@@ -18,9 +18,9 @@ run() { local name="$1"; shift; step "$name"; "$@" || FAILED+=("$name"); }
 run "stage runtime (host)" tools/stage-runtime.sh
 
 PY="$(tools/bundled-python.sh --with-pytest)" || { echo "bundled python unavailable"; exit 2; }
-run "conformance: extract upstream surface" python3 tools/conformance/extract_surface.py \
+run "conformance: extract upstream surface" "$PY" tools/conformance/extract_surface.py \
   upstream/aitpotluck-local-client --out build/conformance/pinned-surface.json
-run "conformance: no drift, every item classified" python3 tools/conformance/check_coverage.py \
+run "conformance: no drift, every item classified" "$PY" tools/conformance/check_coverage.py \
   --surface build/conformance/pinned-surface.json --quiet
 run "contract tests (bundled $("$PY" -V 2>&1) vs pinned upstream)" "$PY" -m pytest -q -p no:cacheprovider tests
 run "ui unit tests" pnpm --dir ui test

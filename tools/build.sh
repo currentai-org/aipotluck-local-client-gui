@@ -19,6 +19,13 @@ export PATH="$HOME/.cargo/bin:$HOME/.npm-global/bin:$PATH"
 
 git submodule update --init upstream/aitpotluck-local-client
 
+# The Tauri CLI: `cargo tauri` (cargo install tauri-cli), or the npm build of the same CLI, which is
+# what CI installs and what's quickest to get on Windows (no compile).
+if cargo tauri --version >/dev/null 2>&1; then TAURI=(cargo tauri)
+elif command -v tauri >/dev/null 2>&1; then TAURI=(tauri)
+else echo "no Tauri CLI: cargo install tauri-cli --version '^2' --locked, or npm i -g @tauri-apps/cli@2" >&2; exit 2
+fi
+
 if [ "${1:-}" = "--release-target" ]; then
   T="${2:?--release-target needs a target, e.g. windows-x64}"
   PY=""
@@ -37,7 +44,7 @@ if [ "${1:-}" = "--release-target" ]; then
   # AppleScript (window layout), which fails with error -10810 when there is no logged-in GUI
   # session -- e.g. a build over SSH on the Mac mini. `--ci` alone does not set it.
   export CI=true
-  (cd src-tauri && cargo tauri build --ci --target "$TRIPLE" --bundles "$BUNDLES")
+  (cd src-tauri && "${TAURI[@]}" build --ci --target "$TRIPLE" --bundles "$BUNDLES")
   tools/collect-bundles.sh "$T" --rust-target "$TRIPLE" --out "dist/$T"
   exit 0
 fi
@@ -47,9 +54,9 @@ tools/stage-runtime.sh
 
 cd src-tauri
 case "${1:-}" in
-  --dev) exec cargo tauri dev ;;
-  --debug) cargo tauri build --debug ;;
-  "") cargo tauri build ;;
+  --dev) exec "${TAURI[@]}" dev ;;
+  --debug) "${TAURI[@]}" build --debug ;;
+  "") "${TAURI[@]}" build ;;
   *) echo "unknown argument: $1" >&2; exit 2 ;;
 esac
 find target -path '*/bundle/*' \( -name '*.deb' -o -name '*.AppImage' \) -newer ../tools/build.sh -print

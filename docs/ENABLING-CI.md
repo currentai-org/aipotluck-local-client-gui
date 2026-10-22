@@ -29,7 +29,13 @@ The jump to "all five" is almost entirely the two macOS jobs ($0.062/min).
 the Mac mini first). With Linux + macOS, each PR build and each push to `main` costs about
 **$1.63** (Linux $0.14 + two macOS jobs at ~12 min × $0.062 = $1.49): about $98/month at 60
 pushes, $244 at 150, and roughly $6.50 per merged change including ~3 PR builds. Raise the Actions
-budget from step 0 accordingly. A nightly on *every* push is now the expensive part. Options:
+budget from step 0 accordingly.
+
+**Windows is now enabled too** (windows-x64 on `windows-2022`, NSIS installer only; proven on a
+Windows 10 PC first). At the same assumptions as above, ~12 min at Windows' $0.010/min, it adds
+about **$0.12** per build, so each PR build and push to `main` costs about **$1.75**: roughly $105
+a month at 60 pushes and $263 at 150. Check the per-minute rate against GitHub's current pricing;
+a cold Windows Rust build may also run longer than 12 minutes until the cache is warm. A nightly on *every* push is now the expensive part. Options:
 - move macOS builds to the Mac mini;
 - or build nightlies on a schedule (once a day) instead of per push. That's a one-line change.
 

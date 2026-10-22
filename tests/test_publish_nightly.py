@@ -15,9 +15,14 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+# publish-nightly.sh runs only on CI's Ubuntu runner (build.yml's nightly job), and the stub `gh`
+# below is a `#!/usr/bin/env python3` script, which Git Bash on Windows can't exec.
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="the nightly publish job runs on Linux only")
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "publish-nightly.sh"

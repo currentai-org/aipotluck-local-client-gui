@@ -328,6 +328,14 @@ footer {
 	border-top: var(--ds-border-hairline) solid var(--ds-line-1);
 }
 
+footer .btn.uninstall {
+	/* Right-aligned: the version label and the pairing-server override stay together on the left. */
+	margin-left: auto;
+	height: var(--ds-control-sm, 28px);
+	padding: 0 var(--ds-space-2);
+	font-size: var(--ds-text-micro);
+}
+
 /* Setup plan: what will be installed, one row per part, size right. */
 .plan {
 	list-style: none;

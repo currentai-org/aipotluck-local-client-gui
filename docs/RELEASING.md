@@ -45,16 +45,25 @@ One installer set per **OS × CPU architecture**, declared in
 |---|---|---|---|---|
 | linux-x64 | ✅ | `ubuntu-22.04` | `.deb`, `.AppImage` | must |
 | linux-arm64 | ✅ | `ubuntu-22.04-arm` | `.deb`, `.AppImage` | nice |
-| windows-x64 | ⏸ until proven locally | `windows-2022` | `-setup.exe` (NSIS), `.msi` | must |
+| windows-x64 | ✅ | `windows-2022` | `-setup.exe` (NSIS) | must |
 | macos-arm64 | ✅ | `macos-15` | `.dmg`, `.app.zip` | must |
 | macos-x64 | ✅ | `macos-15` (cross-compiled) | `.dmg`, `.app.zip` | optional |
+
+Windows ships the NSIS installer only. The MSI (`nsis,msi`) has never been built: WiX's `light.exe`
+needs the Windows Installer service, which the remote session used to prove the Windows build
+couldn't reach. Try it with one `only: windows-x64` dispatch before adding it, since a failing MSI
+step would fail every nightly.
 
 There are no CUDA or Metal builds of the GUI. The GUI contains no GPU code. The bundled CLI
 downloads the right llama.cpp build (CPU, CUDA, Vulkan or ROCm; Metal is built into the macOS
 asset) on the user's machine, so one binary per OS × arch covers every GPU.
 
 A target is only allowed in the file if the bundled Python *and* upstream's newt pin both have an
-asset for it (`tests/test_build_targets.py`). That's why `windows-arm64` isn't there. Linux builds
+asset for it (`tests/test_build_targets.py`). That's why `windows-arm64` isn't there: llama.cpp and
+python-build-standalone both publish Windows ARM64 builds, but newt doesn't (x64 only, through
+1.19.0), and without newt the app can't pair. Windows 11 on ARM can run the x64 installer under its
+built-in x64 emulation, with llama.cpp emulated too (so slower). That path is untested. Revisit
+when newt ships a `windows_arm64` binary. Linux builds
 run on Ubuntu **22.04** so the binary runs on 22.04 and newer. The run summary prints each Linux
 build's glibc floor.
 
@@ -89,20 +98,38 @@ then flip it on.
 
 ## Cutting a release
 
-1. Bump the version in all three places. They must match, and `tools/release_version.py --check`
-   fails otherwise:
-   - `src-tauri/tauri.conf.json` → `"version"`
-   - `src-tauri/Cargo.toml` → `[package] version` (then `cargo update -p aipotluck-local-client-gui` to refresh the lock)
-   - `ui/package.json` → `"version"`
-2. Commit (`chore(release): 0.2.0`), merge to `main`. That also produces a nightly.
-3. Tag the merge commit and push the tag:
+`tools/release.sh` does it in two steps, because `main` only takes changes through a PR:
+
+1. **Prepare**, on an up-to-date `main` with a clean tree:
    ```bash
-   git tag -a v0.2.0 -m "v0.2.0"
-   git push origin v0.2.0
+   tools/release.sh prepare 0.2.0 --push
    ```
-   The `plan` job refuses a tag that doesn't equal `v<version>` before any build starts.
-4. Wait for `build` to go green, then open **Releases → the draft**. Install at least the Linux
-   `.deb` on a real machine (CLAUDE.md, tests rule 3), edit the notes, and **Publish**.
+   This creates the branch `release/v0.2.0`. It sets the version in `src-tauri/tauri.conf.json`,
+   `src-tauri/Cargo.toml` (and the app's entry in `Cargo.lock`) and `ui/package.json`, then commits
+   `chore(release): 0.2.0`. `--push` pushes the branch; without it, push it yourself. Open a PR
+   into `main` and merge it.
+2. **Tag**, back on `main` after pulling the merge:
+   ```bash
+   git checkout main && git pull
+   tools/release.sh tag 0.2.0
+   ```
+   It checks everything first and creates nothing if any check fails:
+   - the tree is clean and `HEAD` is exactly `origin/main`;
+   - all three files say `0.2.0`;
+   - `v0.2.0` exists neither locally nor on origin;
+   - the pinned CLI commit is on the CLI's `main`, so a release never ships a CLI that only exists
+     on a feature branch.
+
+   It then asks before creating and pushing the annotated tag (`--yes` skips the question).
+3. **The tag builds the release.** `build.yml` builds every enabled target and creates a **draft**
+   release with the installers, one `SHA256SUMS`, and notes GitHub generates from the PRs merged
+   since the last release. The `plan` job also refuses a tag that doesn't equal `v<version>`.
+4. **Review and publish.** When `build` is green, open **Releases → the draft**. Install at least
+   one build on a real machine (CLAUDE.md, tests rule 3), edit the notes if needed, and click
+   **Publish**.
+
+A pre-release works the same way (`tools/release.sh prepare 0.2.0-rc.1`). Tick "Set as a
+pre-release" on the draft before publishing.
 
 To rebuild a release's assets, re-run the failed jobs on the tag's workflow run. The release job
 replaces the draft's assets instead of failing.

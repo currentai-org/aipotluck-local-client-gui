@@ -49,6 +49,15 @@ def _env(home: Path) -> dict:
         # No service manager in tests: upstream's systemd backend no-ops when systemctl is absent.
         PATH="/usr/bin/false-dir-only",
     )
+    if sys.platform == "win32":
+        # Upstream's Windows layout reads %LOCALAPPDATA%; keep it inside the test home. PATH must
+        # keep System32 (python.exe needs its DLLs, and schtasks lives there).
+        env.update(
+            USERPROFILE=str(home),
+            LOCALAPPDATA=str(home / "AppData" / "Local"),
+            APPDATA=str(home / "AppData" / "Roaming"),
+            PATH=os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32"),
+        )
     return env
 
 
@@ -62,12 +71,16 @@ def _cfg(home: Path) -> Path:
     written out independently here so the probe is checked against it rather than against itself."""
     if sys.platform == "darwin":
         return home / "Library" / "Application Support" / "aipotluck" / "config"
+    if sys.platform == "win32":
+        return home / "AppData" / "Local" / "aipotluck" / "config"
     return home / ".config" / "aipotluck"
 
 
 def _logs(home: Path) -> Path:
     if sys.platform == "darwin":
         return home / "Library" / "Logs" / "aipotluck"
+    if sys.platform == "win32":
+        return home / "AppData" / "Local" / "aipotluck" / "logs"
     return home / ".local" / "state" / "aipotluck" / "logs"
 
 
@@ -92,8 +105,25 @@ def test_probe_reports_upstreams_own_layout_and_a_fresh_machine_as_not_installed
     assert probe["logged_in"] is False
     # The probe must place runtime.json exactly where upstream's own CLI reads it from.
     assert probe["runtime_json"] == str(_cfg(home) / "runtime.json")
-    # Linux: no systemctl on PATH in this test. macOS: launchd is always there (upstream assumes so).
-    assert probe["service_manager_usable"] is (sys.platform == "darwin")
+    # Linux: no systemctl on PATH in this test. macOS/Windows: launchd/Task Scheduler are always
+    # there, and before anything is installed the probe takes them as usable.
+    assert probe["service_manager_usable"] is (sys.platform in ("darwin", "win32"))
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows Task Scheduler")
+def test_an_installed_windows_device_with_no_scheduled_task_is_hosted_by_the_app(home: Path):
+    """Upstream now refuses to report a task it couldn't register (a non-interactive logon). After
+    an install, no task means this session can't have one, so the GUI must host the service --
+    otherwise nothing runs it at all."""
+    cfg = _cfg(home)
+    cfg.mkdir(parents=True)
+    binary = home / "llama-server.exe"
+    binary.write_text("")
+    (cfg / "runtime.json").write_text(json.dumps({"llama_cpp": {"server_binary": str(binary)}, "logged_in": False}))
+    probe = _layout(home)
+    assert probe["installed"] is True
+    assert probe["service"]["state"] == "not_installed"
+    assert probe["service_manager_usable"] is False
 
 
 def test_probe_sees_an_install_only_when_the_llama_server_binary_really_exists(home: Path):
@@ -227,6 +257,40 @@ def test_install_plan_offline_reports_unknown_sizes_and_never_fails(home: Path):
         assert plan["llama_cpp"]["asset_key"] in llama_pin["assets"]
         assert plan["llama_cpp"]["file"] == llama_pin["assets"][plan["llama_cpp"]["asset_key"]]["file"]
     assert plan["newt"]["tag"] == json.loads((UPSTREAM / "newt_version.json").read_text())["tag"]
+
+
+@pytest.mark.parametrize("backend", ["cuda", "vulkan", "cpu"])
+def test_a_compute_override_is_planned_and_handed_to_upstream_in_the_form_it_parses(home: Path, backend: str):
+    plan = _plan(home, f"--backend={backend}")
+    # The plan is sized for the build upstream's own resolver picks for that backend on this host:
+    # its exact asset, or (no asset for this OS/arch) a source build -- never a silent other one.
+    assert plan["host"]["backend"] == backend and plan["backends"]["selected"] == backend
+    if not plan["llama_cpp"]["source_build"]:
+        assert plan["llama_cpp"]["asset_key"].endswith(f"-{backend}")
+    # setup_device passes the override as one `--backend=<b>` token; upstream must accept it.
+    parsed = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; sys.path.insert(0, '.');"
+         "from aipotluck.installer.install import build_arg_parser;"
+         f"print(build_arg_parser().parse_args(['--backend={backend}']).backend)"],
+        cwd=UPSTREAM, env=_env(home), capture_output=True, text=True, timeout=30,
+    )
+    assert parsed.returncode == 0, parsed.stderr
+    assert parsed.stdout.strip() == backend
+
+
+def test_the_compute_picker_reports_upstreams_auto_choice_and_every_option(home: Path):
+    plan = _plan(home)
+    picker = plan["backends"]
+    assert picker["auto"] == plan["host"]["backend"] == picker["selected"]
+    llama_pin = json.loads((UPSTREAM / "llama_version.json").read_text())
+    host = plan["host"]
+    if host["os"] in ("linux", "windows"):
+        assert [o["backend"] for o in picker["options"]] == ["cuda", "vulkan", "cpu"]
+        for o in picker["options"]:
+            assert o["available"] == (f"{host['os']}-{host['arch']}-{o['backend']}" in llama_pin["assets"])
+    else:
+        assert picker["options"] == []
 
 
 def test_install_plan_default_model_is_the_one_upstreams_installer_would_pull(home: Path):

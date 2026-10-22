@@ -75,6 +75,15 @@ def probe(install_dir: Path | None) -> dict:
             service_state = {"state": status.state.value, "detail": status.detail}
         except Exception as exc:  # report, never crash the probe
             service_state = {"state": "unknown", "detail": str(exc)}
+        # Windows: Task Scheduler is always present, and upstream registers the per-user logon task
+        # as a standard user. If it still couldn't (upstream says so and leaves no task), "no task"
+        # after an install means this session can't have one, and the GUI hosts the service
+        # itself, as it does with no systemd. A registered task is Task Scheduler's to run: upstream
+        # starts it at install and login (from the desktop session the app runs in), and at every
+        # sign-in after that.
+        if os_name == "windows" and installed and service_state and service_state["state"] == "not_installed":
+            usable = False
+            usable_detail = "Task Scheduler didn't register the service for this session; the app runs it while open"
 
     return {
         "os": os_name,
