@@ -300,3 +300,15 @@ const MODEL_ID = new RegExp(`^${PART}/${PART}(?::[A-Za-z0-9._-]{1,64})?$`);
 export function isModelId(id: string): boolean {
 	return MODEL_ID.test(id) && !/--|\.\./.test(id.split(':')[0]);
 }
+
+/** One sentence saying what an uninstall with these choices removes and keeps. */
+export function uninstallSummary(removeCli: boolean, removeModels: boolean): string {
+	if (removeCli) {
+		return removeModels
+			? 'Stops and removes the background service, and deletes this app, llama.cpp, newt, this computer’s pairing, logs, downloads and every downloaded model.'
+			: 'Stops and removes the background service, and deletes this app, llama.cpp, newt, this computer’s pairing, logs and downloads. Downloaded models are kept.';
+	}
+	return removeModels
+		? 'Deletes this app and every downloaded model. The command-line client and its background service stay installed and keep running.'
+		: 'Deletes only this app. The command-line client, its background service and your models stay installed and keep running.';
+}

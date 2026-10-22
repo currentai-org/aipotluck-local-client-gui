@@ -19,6 +19,9 @@ export const api = {
 	pair: (pasted?: string) => invoke<void>('pair', { pasted: pasted ?? null }),
 	unpair: () => invoke<void>('unpair'),
 	openSettingsPage: () => invoke<void>('open_settings_page'),
+	uninstallInfo: () => invoke<{ app_install: string; note: string | null }>('uninstall_info'),
+	uninstall: (removeCli: boolean, removeModels: boolean) =>
+		invoke<void>('uninstall_app', { removeCli, removeModels }),
 	service: <T = unknown>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown) =>
 		invoke<ServiceResponse<T>>('service_call', { method, path, body: body ?? null }),
 	status: async (): Promise<Status | null> => {

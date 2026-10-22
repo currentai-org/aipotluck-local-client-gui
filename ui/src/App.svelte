@@ -3,6 +3,7 @@
 	import Icon from './lib/Icon.svelte';
 	import Models from './lib/Models.svelte';
 	import SetupSettings from './lib/SetupSettings.svelte';
+	import UninstallDialog from './lib/UninstallDialog.svelte';
 	import { api, onRuntimeReady, onTaskDone, onTaskLog, type PairingPreview } from './lib/api';
 	import {
 		formatBytes,
@@ -26,6 +27,7 @@
 	let pasted = $state('');
 	let showPaste = $state(false);
 	let logEl: HTMLPreElement | undefined = $state();
+	let uninstalling = $state(false);
 
 	// Set up's plan: what it will install and how big. `modelHf` and `backend` are the Customize
 	// overrides ('' = upstream's default model / auto-detected compute); `planFor` is the pair the
@@ -112,6 +114,7 @@
 				queueMicrotask(() => logEl?.scrollTo({ top: logEl.scrollHeight }));
 			}),
 			onTaskDone(async (e) => {
+				if (e.task === 'uninstall' && !e.ok) uninstalling = false;
 				if (!e.ok) taskError = `That didn’t finish (exit code ${e.code}). The details are in the log below.`;
 				else if (e.task === 'pair') pasted = '';
 				await refresh();
@@ -319,6 +322,25 @@
 
 <footer>
 	{#if app?.ready}
-		aipotluck-local-client {app.upstream_sha.slice(0, 7)}{app.hosted_by_gui ? ' · hosted by this window' : ''}
+		<span>aipotluck-local-client {app.upstream_sha.slice(0, 7)}{app.hosted_by_gui ? ' · hosted by this window' : ''}</span>
+		<button class="btn ghost uninstall" disabled={!!busy} onclick={() => (uninstalling = true)}>
+			<Icon name="delete-bin-line" size={14} /> Uninstall
+		</button>
 	{/if}
 </footer>
+
+{#if uninstalling}
+	<UninstallDialog
+		running={busy === 'uninstall'}
+		oncancel={() => (uninstalling = false)}
+		onconfirm={({ removeCli, removeModels }) => {
+			taskError = null;
+			log = [];
+			api.uninstall(removeCli, removeModels).catch((e) => {
+				taskError = String(e);
+				uninstalling = false;
+			});
+			refresh();
+		}}
+	/>
+{/if}

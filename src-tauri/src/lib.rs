@@ -9,6 +9,7 @@ mod pairing;
 mod paths;
 mod runtime;
 mod service;
+mod uninstall;
 
 use runtime::Runtime;
 use serde::Serialize;
@@ -94,6 +95,11 @@ fn stop_hosted(state: &AppState) {
 
 /// When the OS can't keep the service running for us, the GUI does (for as long as it's open).
 fn ensure_hosted_service(state: &AppState, rt: &Runtime, probe: &Value) -> Result<bool, String> {
+    // Never mid-uninstall: the probe can still see the install while upstream is deleting it, and
+    // a service started then recreates its log directory after the uninstall (seen in the e2e run).
+    if *state.busy.lock().unwrap() == Some("uninstall") {
+        return Ok(false);
+    }
     let installed = probe["installed"].as_bool().unwrap_or(false);
     let usable = probe["service_manager_usable"].as_bool().unwrap_or(true);
     if !installed || usable || hosted_running(state) || service::healthy() {
@@ -219,7 +225,9 @@ fn checked_backend(backend: Option<String>) -> Result<Option<String>, String> {
     match backend.as_deref().map(str::trim) {
         None | Some("") | Some("auto") => Ok(None),
         Some(b) if PICKER_BACKENDS.contains(&b) => Ok(Some(b.to_string())),
-        Some(b) => Err(format!("“{b}” isn’t a compute option. Use CUDA, Vulkan or CPU.")),
+        Some(b) => Err(format!(
+            "“{b}” isn’t a compute option. Use CUDA, Vulkan or CPU."
+        )),
     }
 }
 
@@ -250,9 +258,11 @@ async fn install_plan(
 async fn model_size(state: State<'_, AppState>, model_hf: String) -> Result<Value, String> {
     let model = checked_model(Some(model_hf))?.ok_or("no model given")?;
     let rt = rt(&state)?;
-    tauri::async_runtime::spawn_blocking(move || Ok(rt.plan(Some(&model), None, true)?["model"].take()))
-        .await
-        .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(rt.plan(Some(&model), None, true)?["model"].take())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// One click: upstream's installer with its defaults (auto-detected backend, default model
@@ -272,7 +282,10 @@ async fn setup_device(
     let probe = tauri::async_runtime::spawn_blocking(move || rt.probe())
         .await
         .map_err(|e| e.to_string())??;
-    let mut args = vec![format!("--backend={}", backend.as_deref().unwrap_or("auto"))];
+    let mut args = vec![format!(
+        "--backend={}",
+        backend.as_deref().unwrap_or("auto")
+    )];
     if let Some(m) = model {
         // One token, so the value can never be read as a flag of its own.
         args.push(format!("--model-hf={m}"));
@@ -397,6 +410,137 @@ async fn service_call(
         .map_err(|e| e.to_string())?
 }
 
+/// What the uninstall dialog needs to know: how this app was installed (so it can say if the app
+/// itself will stay), and whether a CLI install exists to offer removing.
+#[tauri::command]
+fn uninstall_info() -> Value {
+    let exe = std::env::current_exe().unwrap_or_default();
+    let app = uninstall::AppInstall::detect(&exe, std::env::var_os("APPIMAGE").map(Into::into));
+    json!({ "app_install": app.kind(), "note": app.note() })
+}
+
+/// The per-app directories Tauri derives from the bundle identifier (webview data, caches, logs).
+fn app_dirs(app: &AppHandle) -> Vec<std::path::PathBuf> {
+    let p = app.path();
+    [
+        p.app_data_dir(),
+        p.app_local_data_dir(),
+        p.app_cache_dir(),
+        p.app_config_dir(),
+        p.app_log_dir(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+/// Uninstall, then quit. `remove_cli`: upstream's `cli uninstall` stops and removes the service and
+/// deletes the CLI's install (with the models too if `remove_models`); without it, `remove_models`
+/// alone runs `cli uninstall --models-only`, leaving the CLI and its service running. The GUI's own
+/// files always go: they're handed to a detached cleanup process that waits for this app to exit
+/// (its executable and webview profile are in use until then) -- see uninstall.rs.
+#[tauri::command]
+fn uninstall_app(app: AppHandle, remove_cli: bool, remove_models: bool) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let rt = rt(&state)?;
+    let mut args = vec!["uninstall".to_string(), "--yes".to_string()];
+    if remove_cli && remove_models {
+        args.push("--remove-models".into());
+    } else if !remove_cli && remove_models {
+        args.push("--models-only".into());
+    }
+    // Claim first, so the 3-second poll can't restart a GUI-hosted service in between (it checks
+    // for this task); then stop it, since it holds the files upstream is about to delete.
+    claim(&state, "uninstall")?;
+    if remove_cli {
+        stop_hosted(&state);
+    }
+    let run_cli = remove_cli || remove_models;
+    std::thread::spawn(move || {
+        let emit_app = app.clone();
+        let code = if run_cli {
+            rt.run_module_streaming("aipotluck.installer.cli", &args, move |line| {
+                let _ = emit_app.emit(
+                    "task-log",
+                    TaskLine {
+                        task: "uninstall",
+                        line: line.to_string(),
+                    },
+                );
+            })
+            .unwrap_or_else(|e| {
+                let _ = app.emit(
+                    "task-log",
+                    TaskLine {
+                        task: "uninstall",
+                        line: e,
+                    },
+                );
+                -1
+            })
+        } else {
+            0
+        };
+        if code != 0 {
+            // Upstream said what failed and left things retryable; the app stays open to show it.
+            release(&app);
+            let _ = app.emit(
+                "task-done",
+                TaskDone {
+                    task: "uninstall",
+                    code,
+                    ok: false,
+                },
+            );
+            return;
+        }
+        let exe = std::env::current_exe().unwrap_or_default();
+        let install =
+            uninstall::AppInstall::detect(&exe, std::env::var_os("APPIMAGE").map(Into::into));
+        let mut candidates = app_dirs(&app);
+        // A kept CLI's service runs from the bundled interpreter and source: they stay with it.
+        if remove_cli {
+            candidates.push(paths::runtime_root());
+        }
+        let identifier = app.config().identifier.clone();
+        let doomed = uninstall::plan(candidates, &paths::home(), &identifier, &install);
+        match uninstall::cleanup_command(std::process::id(), &install, &doomed).spawn() {
+            Ok(_) => {
+                let _ = app.emit(
+                    "task-done",
+                    TaskDone {
+                        task: "uninstall",
+                        code: 0,
+                        ok: true,
+                    },
+                );
+                // Give the window a moment to show it's done, then quit; the cleanup runs after.
+                std::thread::sleep(std::time::Duration::from_millis(800));
+                app.exit(0);
+            }
+            Err(e) => {
+                release(&app);
+                let _ = app.emit(
+                    "task-log",
+                    TaskLine {
+                        task: "uninstall",
+                        line: format!("couldn't start the cleanup: {e}"),
+                    },
+                );
+                let _ = app.emit(
+                    "task-done",
+                    TaskDone {
+                        task: "uninstall",
+                        code: -1,
+                        ok: false,
+                    },
+                );
+            }
+        }
+    });
+    Ok(())
+}
+
 #[tauri::command]
 fn open_settings_page() -> Result<(), String> {
     open_url(SETTINGS_URL)
@@ -450,7 +594,9 @@ pub fn run() {
             pair,
             unpair,
             service_call,
-            open_settings_page
+            open_settings_page,
+            uninstall_info,
+            uninstall_app
         ])
         .build(tauri::generate_context!())
         .expect("error while building the app")

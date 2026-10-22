@@ -13,7 +13,8 @@ import {
 	type AppState,
 	type InstallPlan,
 	type Probe,
-	BACKEND_INFO
+	BACKEND_INFO,
+	uninstallSummary
 } from './state';
 
 const probe = (over: Partial<Probe> = {}): Probe => ({
@@ -287,5 +288,18 @@ describe('BACKEND_INFO', () => {
 			expect(info.why.length, key).toBeLessThan(140);
 		}
 		expect(Object.keys(BACKEND_INFO)).toEqual(['cuda', 'vulkan', 'cpu']);
+	});
+});
+
+describe('uninstallSummary', () => {
+	it('says the service goes only when the CLI does, and models only when asked', () => {
+		const all = uninstallSummary(true, true);
+		expect(all).toMatch(/removes the background service/);
+		expect(all).toMatch(/every downloaded model/);
+		expect(uninstallSummary(true, false)).toMatch(/Downloaded models are kept/);
+		const guiOnly = uninstallSummary(false, false);
+		expect(guiOnly).toMatch(/keep running/);
+		expect(guiOnly).not.toMatch(/removes the background service/);
+		expect(uninstallSummary(false, true)).toMatch(/every downloaded model.*service stay/);
 	});
 });
