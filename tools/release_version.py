@@ -12,6 +12,8 @@
                                              one-off request (workflow_dispatch) to try it
     tools/release_version.py --target-info linux-x64
                                              one target's entry as JSON (tools/build.sh uses it)
+    tools/release_version.py --set 0.2.0     write 0.2.0 into all three files (and the app's own
+                                             entry in src-tauri/Cargo.lock); tools/release.sh uses it
 
 The installers take their version from tauri.conf.json, so a release tag that disagrees with it
 would publish files whose names and About box say a different version than the tag. The release
@@ -43,6 +45,34 @@ def versions() -> dict[str, str | None]:
     }
 
 
+SEMVER = r"\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?"
+
+
+def _replace_once(path: pathlib.Path, pattern: str, new: str, flags: int = 0) -> None:
+    """Swap one version string in place, leaving every other byte of the file alone -- a
+    json.dump round-trip would reformat tauri.conf.json and package.json."""
+    text = path.read_text(encoding="utf-8")
+    out, n = re.subn(pattern, lambda m: m.group(1) + new + m.group(3), text, count=1, flags=flags)
+    if n != 1:
+        raise SystemExit(f"couldn't find the version to replace in {path.relative_to(ROOT)}")
+    path.write_text(out, encoding="utf-8")
+
+
+def set_version(version: str) -> None:
+    if not re.fullmatch(SEMVER, version):
+        raise SystemExit(f"version {version!r} is not semver (MAJOR.MINOR.PATCH[-pre])")
+    v = rf"({SEMVER})"
+    # The top-level "version" key: the first one in each file, before any nested object.
+    _replace_once(ROOT / "src-tauri" / "tauri.conf.json", rf'(\n  "version"\s*:\s*"){v[1:-1]}(")', version)
+    _replace_once(ROOT / "ui" / "package.json", rf'(\n  "version"\s*:\s*"){v[1:-1]}(")', version)
+    # [package] version in Cargo.toml (the first `version =` at the start of a line).
+    _replace_once(ROOT / "src-tauri" / "Cargo.toml", rf'(^version\s*=\s*"){v[1:-1]}(")', version, re.M)
+    # The app's own entry in Cargo.lock, so a build doesn't rewrite the lock (or fail --locked).
+    lock = ROOT / "src-tauri" / "Cargo.lock"
+    if lock.exists():
+        _replace_once(lock, rf'(name = "aipotluck-local-client-gui"\nversion = "){v[1:-1]}(")', version)
+
+
 def targets() -> list[dict]:
     return json.loads((ROOT / ".github" / "build-targets.json").read_text(encoding="utf-8"))["targets"]
 
@@ -68,8 +98,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--matrix", action="store_true")
     ap.add_argument("--only", default=None)
     ap.add_argument("--target-info", default=None)
+    ap.add_argument("--set", dest="set_to", default=None)
     args = ap.parse_args(argv)
 
+    if args.set_to:
+        set_version(args.set_to)
+        print(args.set_to)
+        return 0
     if args.matrix:
         print(json.dumps(matrix(args.only or None), separators=(",", ":")))
         return 0
