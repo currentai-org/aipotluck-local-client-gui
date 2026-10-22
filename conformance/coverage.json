@@ -153,6 +153,10 @@
       "status": "implemented",
       "note": "Delete icon per model, confirmed on the row, via DELETE /models (same model_ops.remove)."
     },
+    "cli.subcommands.uninstall.*": {
+      "status": "implemented",
+      "note": "Footer Uninstall button -> confirmation dialog. 'CLI files' runs `cli uninstall --yes` (+ --remove-models with 'Model cache'); 'Model cache' alone runs `--models-only`. The GUI then deletes its own runtime/webview data and quits."
+    },
     "cli.subcommands.status.*": {
       "status": "implemented",
       "note": "Status screen reads the same GET /status the CLI's `status` prints."

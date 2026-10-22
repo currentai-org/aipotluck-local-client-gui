@@ -49,7 +49,7 @@
   "cli": {
     "files": {
       "cli.py": {
-        "sha256": "cf694aa996cdee357983f1569f89ecb72a2c0948c7654619972c5cd4ed40f667"
+        "sha256": "c11cc71a7be325ed8bb429467e16b91ca5230379a7dc84d72bbc0dcc6b2a8e54"
       },
       "install.py": {
         "sha256": "c5ce832352e67117556f1f0811789cfd31f1299c8bc32336135d9eead744a043"
@@ -514,6 +514,46 @@
         "flags": {},
         "help": "Query the running service's login/tunnel/llama-server state",
         "inherits_shared_flags": false
+      },
+      "uninstall": {
+        "choice_sets": {},
+        "flags": {
+          "--models-only": {
+            "choices": null,
+            "default": null,
+            "help": "Delete every downloaded model and leave the rest of the install (and the service) in place",
+            "names": [
+              "--models-only"
+            ],
+            "required": false,
+            "takes_value": false,
+            "type": null
+          },
+          "--remove-models": {
+            "choices": null,
+            "default": null,
+            "help": "Also delete every downloaded model (the Hugging Face cache llama.cpp uses); kept by default",
+            "names": [
+              "--remove-models"
+            ],
+            "required": false,
+            "takes_value": false,
+            "type": null
+          },
+          "--yes": {
+            "choices": null,
+            "default": null,
+            "help": "Skip the confirmation prompt (required when there's no terminal to prompt on)",
+            "names": [
+              "--yes"
+            ],
+            "required": false,
+            "takes_value": false,
+            "type": null
+          }
+        },
+        "help": "Stop and remove the background service, and delete llama.cpp, newt, config, logs and downloads",
+        "inherits_shared_flags": false
       }
     }
   },
@@ -694,7 +734,7 @@
         "sha256": "22a0ea1c5d95a6e22605fe4e69c0f79fec013b09026a679b3a00accf7a998ecd"
       },
       "runner.py": {
-        "sha256": "58c9f57d9fec695923aea5a5eed2beefc66c1eaa85e5f686d908d5cd68223127"
+        "sha256": "20e7c947921473562476407d9d58bed40c5cb23b9a84d0b3c27dc709c645f5c3"
       }
     },
     "fingerprint_version": 1,
@@ -763,9 +803,9 @@
       "tunnel"
     ]
   },
-  "source_commit": "71ddfa66fa44477292db9cf5bf5a2b4eccb99ac3",
+  "source_commit": "1573c329a5485adfa535586251c9a40956f95f0e",
   "source_repo": "aitpotluck-local-client",
-  "source_subject": "feat(installer): auto-detect a GPU backend on Windows (CUDA, then Vulkan, then CPU)",
+  "source_subject": "feat(cli): uninstall --models-only deletes every model and keeps the install",
   "tunnel": {
     "argv": [
       {
