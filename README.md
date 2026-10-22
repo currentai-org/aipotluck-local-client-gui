@@ -13,8 +13,10 @@ and Windows builds are unsigned.**
 
 1. Install the `.deb` (or run the `.AppImage`) and open **AI Potluck**.
 2. **Set up.** Installs llama.cpp for this hardware and a small starter model.
-3. On aipotluck.org go to **Settings → Local Inference → Add a managed server → Pair → Copy**, then
-   switch back to the app and click **Pair this computer**.
+3. **Pair in your browser.** aipotluck.org opens; approve this computer there while signed in. That's
+   it. (The app also shows the link, so you can approve from another device. To pair the old way,
+   choose **Paste the code instead** and paste the code from **Settings → Local Inference → Add a
+   managed server → Pair → Copy**.)
 
 The server keeps running in the background after the window closes (a systemd user service on
 Linux, a launchd agent on macOS, a logon Scheduled Task on Windows), exactly like a CLI install.

@@ -21,6 +21,8 @@ export type AppState =
 			upstream_sha: string;
 			busy: string | null;
 			settings_url: string;
+			/** The hidden pairing-server override, or null for upstream's default (aipotluck.org). */
+			server_url_override?: string | null;
 	  };
 
 /** Upstream's GET /status, the fields this UI reads. Everything else is ignored, never rejected. */

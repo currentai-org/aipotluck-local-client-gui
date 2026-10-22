@@ -9,6 +9,7 @@ mod pairing;
 mod paths;
 mod runtime;
 mod service;
+mod settings;
 mod uninstall;
 
 use runtime::Runtime;
@@ -31,6 +32,9 @@ struct AppState {
     /// service payload itself (see Runtime::spawn_service).
     hosted_service: Mutex<Option<Child>>,
     busy: Mutex<Option<&'static str>>,
+    /// The pid of the running task's upstream process, so a one-click pairing that is still
+    /// waiting for the browser can be cancelled.
+    task_pid: Mutex<Option<u32>>,
 }
 
 #[derive(Serialize, Clone)]
@@ -147,6 +151,7 @@ async fn app_state(state: State<'_, AppState>) -> Result<Value, String> {
         "upstream_sha": rt.upstream_sha,
         "busy": *state.busy.lock().unwrap(),
         "settings_url": SETTINGS_URL,
+        "server_url_override": settings::load_from(&settings::path()).server_url,
     }))
 }
 
@@ -177,20 +182,27 @@ fn spawn_task(
     claim(&state, task)?;
     std::thread::spawn(move || {
         let emit_app = app.clone();
+        let pid_app = app.clone();
         let code = rt
-            .run_module_streaming(module, &args, move |line| {
-                let _ = emit_app.emit(
-                    "task-log",
-                    TaskLine {
-                        task,
-                        line: line.to_string(),
-                    },
-                );
-            })
+            .run_module_streaming(
+                module,
+                &args,
+                move |pid| *pid_app.state::<AppState>().task_pid.lock().unwrap() = Some(pid),
+                move |line| {
+                    let _ = emit_app.emit(
+                        "task-log",
+                        TaskLine {
+                            task,
+                            line: line.to_string(),
+                        },
+                    );
+                },
+            )
             .unwrap_or_else(|e| {
                 let _ = app.emit("task-log", TaskLine { task, line: e });
                 -1
             });
+        *app.state::<AppState>().task_pid.lock().unwrap() = None;
         after(&app, code);
         release(&app);
         let _ = app.emit(
@@ -332,6 +344,114 @@ fn restart_hosted_if_needed(app: &AppHandle) {
     }
 }
 
+/// One-click pairing: upstream's own `cli login` with no credential flags. It opens aipotluck.org's
+/// pairing page in the browser for a fresh pairing id, prints that URL (the UI shows it, so the
+/// person can open it on another device), and polls until they approve; the credentials go
+/// straight from aipotluck.org into upstream's runtime.json and never pass through the GUI.
+/// `--server-url` is passed only when the hidden server override is set.
+#[tauri::command]
+fn pair_one_click(app: AppHandle) -> Result<(), String> {
+    let mut args = vec!["login".to_string()];
+    if let Some(url) = settings::load_from(&settings::path()).server_url {
+        // One token, so the value can never be read as a flag of its own.
+        args.push(format!("--server-url={url}"));
+    }
+    spawn_task(app, "pair", "aipotluck.installer.cli", args, |app, code| {
+        if code == 0 {
+            restart_hosted_if_needed(app);
+        }
+    })
+}
+
+/// Stop a one-click pairing that is still waiting for the browser. Upstream treats SIGINT as the
+/// person pressing Ctrl-C: "Pairing cancelled; nothing was changed." Only `pair` can be cancelled;
+/// cutting short a setup or an unpair midway could leave the machine half-changed.
+#[tauri::command]
+fn cancel_pairing(state: State<'_, AppState>) -> Result<(), String> {
+    if *state.busy.lock().unwrap() != Some("pair") {
+        return Err("no pairing is in progress".into());
+    }
+    let Some(pid) = *state.task_pid.lock().unwrap() else {
+        return Err("the pairing hasn't started yet".into());
+    };
+    interrupt(pid)
+}
+
+#[cfg(unix)]
+fn interrupt(pid: u32) -> Result<(), String> {
+    std::process::Command::new("kill")
+        .args(["-INT", &pid.to_string()])
+        .status()
+        .map_err(|e| e.to_string())
+        .and_then(|s| {
+            if s.success() {
+                Ok(())
+            } else {
+                Err("couldn't stop the pairing".into())
+            }
+        })
+}
+
+#[cfg(windows)]
+fn interrupt(pid: u32) -> Result<(), String> {
+    // No console to send Ctrl-C to (CREATE_NO_WINDOW); end it. Upstream writes nothing until the
+    // credentials arrive, so stopping it while it waits leaves the machine unchanged either way.
+    std::process::Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .status()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// The server pairing would use: upstream's default, or the saved override, as upstream itself
+/// resolves it. `{default, effective, from_env, error, override}`.
+#[tauri::command]
+async fn pairing_server(state: State<'_, AppState>) -> Result<Value, String> {
+    let rt = rt(&state)?;
+    let current = settings::load_from(&settings::path()).server_url;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut v = rt.server(current.as_deref())?;
+        v["override"] = json!(current);
+        Ok(v)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Save (or, with an empty value, clear) the server override -- but only a value upstream itself
+/// accepts, checked the same way `cli login --server-url` will check it.
+#[tauri::command]
+async fn set_pairing_server(
+    state: State<'_, AppState>,
+    server_url: Option<String>,
+) -> Result<Value, String> {
+    let rt = rt(&state)?;
+    let wanted = server_url
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut v = rt.server(wanted.as_deref())?;
+        if let Some(err) = v["error"].as_str() {
+            return Err(err.to_string());
+        }
+        // Store upstream's normalized form (scheme://host[:port][/path], no trailing slash), so the
+        // footer and `--server-url` show exactly the server login will talk to.
+        let saved = wanted
+            .as_ref()
+            .and(v["effective"].as_str().map(str::to_string));
+        settings::save_to(
+            &settings::path(),
+            &settings::Settings {
+                server_url: saved.clone(),
+            },
+        )?;
+        v["override"] = json!(saved);
+        Ok(v)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// What's on the clipboard, if (and only if) it's an aipotluck.org pairing. Never the secret.
 #[tauri::command]
 fn clipboard_pairing(app: AppHandle) -> Option<pairing::PairingPreview> {
@@ -410,6 +530,34 @@ async fn service_call(
         .map_err(|e| e.to_string())?
 }
 
+/// Re-open the one-click pairing link upstream printed (the UI's "Open it again"). Only an http(s)
+/// link to the pair page, so the webview can't use this to launch anything else.
+#[tauri::command]
+fn open_link(url: String) -> Result<(), String> {
+    if !is_pairing_link(&url) {
+        return Err("not an AI Potluck pairing link".into());
+    }
+    open_url(&url)
+}
+
+fn is_pairing_link(url: &str) -> bool {
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"));
+    let Some(rest) = rest else { return false };
+    let Some((host_and_path, query)) = rest.split_once('?') else {
+        return false;
+    };
+    host_and_path.ends_with("/chat/local-inference/pair")
+        && !host_and_path.contains(char::is_whitespace)
+        && query
+            .split('&')
+            .any(|kv| kv.starts_with("id=") && kv.len() > 3)
+        && !url
+            .chars()
+            .any(|c| c.is_control() || c == '"' || c == '\'' || c == '`')
+}
+
 /// What the uninstall dialog needs to know: how this app was installed (so it can say if the app
 /// itself will stay), and whether a CLI install exists to offer removing.
 #[tauri::command]
@@ -459,7 +607,7 @@ fn uninstall_app(app: AppHandle, remove_cli: bool, remove_models: bool) -> Resul
     std::thread::spawn(move || {
         let emit_app = app.clone();
         let code = if run_cli {
-            rt.run_module_streaming("aipotluck.installer.cli", &args, move |line| {
+            rt.run_module_streaming("aipotluck.installer.cli", &args, |_| {}, move |line| {
                 let _ = emit_app.emit(
                     "task-log",
                     TaskLine {
@@ -561,6 +709,45 @@ fn open_url(url: &str) -> Result<(), String> {
         .map_err(|e| format!("couldn't open a browser ({e}); visit {url}"))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{checked_backend, is_pairing_link};
+
+    #[test]
+    fn only_a_pairing_page_link_can_be_reopened() {
+        assert!(is_pairing_link(
+            "https://www.aipotluck.org/chat/local-inference/pair?id=Xk2_9aQ-wt3hL0v8bYc1nR5sE7uJ4mZ6dF0&name=pi5"
+        ));
+        assert!(is_pairing_link(
+            "http://localhost:5173/chat/local-inference/pair?id=abc"
+        ));
+        for bad in [
+            "file:///etc/passwd?/chat/local-inference/pair?id=x",
+            "https://evil.example/download.sh",
+            "https://www.aipotluck.org/chat/local-inference/pair?name=pi5",
+            "https://www.aipotluck.org/chat/local-inference/pair?id=",
+            "https://www.aipotluck.org/chat/local-inference/pair?id=x\" & calc",
+            "smb://host/chat/local-inference/pair?id=x",
+        ] {
+            assert!(!is_pairing_link(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_compute_picker_accepts_only_its_three_choices_or_auto() {
+        assert_eq!(checked_backend(None), Ok(None));
+        assert_eq!(checked_backend(Some("auto".into())), Ok(None));
+        assert_eq!(checked_backend(Some(" ".into())), Ok(None));
+        for b in ["cuda", "vulkan", "cpu"] {
+            assert_eq!(checked_backend(Some(b.into())), Ok(Some(b.into())));
+        }
+        // Never reaches the installer's command line: not a choice, or an attempt at a flag.
+        for bad in ["rocm", "metal", "CUDA", "--no-service", "cpu --system"] {
+            assert!(checked_backend(Some(bad.into())).is_err(), "{bad}");
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -592,6 +779,11 @@ pub fn run() {
             setup_device,
             clipboard_pairing,
             pair,
+            pair_one_click,
+            cancel_pairing,
+            pairing_server,
+            set_pairing_server,
+            open_link,
             unpair,
             service_call,
             open_settings_page,
@@ -605,23 +797,4 @@ pub fn run() {
                 stop_hosted(&app.state::<AppState>());
             }
         });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::checked_backend;
-
-    #[test]
-    fn the_compute_picker_accepts_only_its_three_choices_or_auto() {
-        assert_eq!(checked_backend(None), Ok(None));
-        assert_eq!(checked_backend(Some("auto".into())), Ok(None));
-        assert_eq!(checked_backend(Some(" ".into())), Ok(None));
-        for b in ["cuda", "vulkan", "cpu"] {
-            assert_eq!(checked_backend(Some(b.into())), Ok(Some(b.into())));
-        }
-        // Never reaches the installer's command line: not a choice, or an attempt at a flag.
-        for bad in ["rocm", "metal", "CUDA", "--no-service", "cpu --system"] {
-            assert!(checked_backend(Some(bad.into())).is_err(), "{bad}");
-        }
-    }
 }

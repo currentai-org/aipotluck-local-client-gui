@@ -10,8 +10,11 @@ What it does, through the actual window (WebDriver via tauri-driver -> WebKitWeb
      saved -> the list names it and re-sizes it (skipped with --default-model)
   3. click Set up -> upstream's real installer runs (real llama.cpp + model download) and pulls
      exactly the model the list showed
-  4. pair screen -> "Paste instead" -> type a pairing JSON -> Pair -> upstream's real `cli login`
-     (real newt download, checksum-verified against upstream's pin)
+  4. pair screen, one-click (the default): the hidden footer control points pairing at a stand-in
+     aipotluck.org on 127.0.0.1 (a bad http override is refused by upstream's own rule) -> "Pair in
+     your browser" runs upstream's real `cli login` (real newt download, checksum-verified), which
+     prints the link the screen shows -> Cancel ("nothing was changed") -> again -> the stand-in
+     approves -> paired, the secret never on screen
   5. running screen: service + inference server healthy; the tunnel row must report the fake
      endpoint as NOT connected (proves the status screen reads tunnel_connected, not `running`)
   6. models: the installed model is listed; a malformed Add is refused; a second small real model
@@ -19,7 +22,9 @@ What it does, through the actual window (WebDriver via tauri-driver -> WebKitWeb
      deleted through its confirm row (skipped with --skip-models)
   7. Unpair -> back to the pair screen, runtime.json logged out
   4b. a new login shell finds the `aipotluck-local-client` command on PATH and runs it
-  8. Uninstall (footer) -> the dialog shows GUI files ticked and locked, CLI files ticked, model
+  8. the manual fallback: "Paste the code instead" -> type a pairing JSON -> Pair -> `cli login
+     --credentials-file` -> paired, temp file removed -> Unpair
+  9. Uninstall (footer) -> the dialog shows GUI files ticked and locked, CLI files ticked, model
      cache unticked -> tick the model cache -> Confirm -> the app quits by itself, and the service,
      llama.cpp, config, the CLI shim and its PATH entry, the GUI's runtime and every downloaded
      model are gone
@@ -30,7 +35,9 @@ Wayland session sets it for XWayland); --visible uses $DISPLAY instead, to watch
 
 Needs: Xvfb, tauri-driver (`cargo install tauri-driver --locked`),
 WebKitWebDriver (apt: webkit2gtk-driver), and a debug or release build of the app.
-The pairing used is fake (endpoint https://pangolin.invalid) -- it never reaches aipotluck.org.
+The pairing used is fake (endpoint https://pangolin.invalid) and one-click talks only to a stand-in
+server on 127.0.0.1 -- nothing ever reaches aipotluck.org. $BROWSER is set to `true`, so upstream's
+"open the browser" step succeeds without opening anything.
 Exit 0 = every step passed.
 """
 from __future__ import annotations
@@ -58,6 +65,49 @@ CUSTOM_MODEL = "bartowski/SmolLM2-135M-Instruct-GGUF:Q4_K_M"
 # Added from the models screen: the same small model at another quant (~145 MB).
 SECOND_MODEL = "bartowski/SmolLM2-135M-Instruct-GGUF:Q8_0"
 FAKE_PAIRING = {"tunnelId": "e2e-smoke", "tunnelSecret": "e2e-not-a-secret", "tunnelEndpoint": "https://pangolin.invalid"}
+
+
+class FakePairingServer:
+    """aipotluck.org's one-click poll route (upstream pairing.py): `{}` until `approve()`, then the
+    installArgs exactly once, then `{}` again. Also counts polls, to prove which server was asked."""
+
+    def __init__(self, install_args: dict):
+        import http.server
+        import threading
+
+        self.polls = 0
+        self.approved = threading.Event()
+        self.handed_over = False
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                if not self.path.startswith("/chat/api/v2/local-inference/pairings/"):
+                    self.send_response(404); self.end_headers(); return
+                outer.polls += 1
+                body = {}
+                if outer.approved.is_set() and not outer.handed_over:
+                    outer.handed_over = True
+                    body = {"id": "e2e", "label": "e2e-box", "installArgs": install_args}
+                data = json.dumps(body).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *a):
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_port}"
+
+    def approve(self):
+        self.approved.set()
+
+    def close(self):
+        self.server.shutdown()
 
 
 def free_port() -> int:
@@ -100,6 +150,18 @@ class WD:
             "if (!b) return false; b.click(); return true;", label)
         if not ok:
             raise AssertionError(f"no enabled button labelled {label!r}; page:\n{self.text()}")
+
+    def click_button_when_enabled(self, label: str, timeout: float = 120):
+        """For a button disabled while a task finishes (e.g. Unpair right after a pair restarts the
+        service): wait for it to enable, then click."""
+        end = time.time() + timeout
+        while True:
+            try:
+                return self.click_button(label)
+            except AssertionError:
+                if time.time() > end:
+                    raise
+                time.sleep(1)
 
     def click_css(self, css: str):
         ok = self.js("const e = document.querySelector(arguments[0]); if (!e || e.disabled) return false; e.click(); return true;", css)
@@ -170,6 +232,8 @@ def main() -> int:
     env["AIPOTLUCK_GUI_TEST_SERVICE_PORT"] = str(free_port())
     env["AIPOTLUCK_GUI_TEST_LLAMA_PORT"] = str(free_port())
     env.pop("WAYLAND_DISPLAY", None)  # the app must come up on the X display chosen below
+    env.pop("AIPOTLUCK_SERVER_URL", None)  # only the GUI's own override may pick the server
+    env["BROWSER"] = "true"  # upstream's webbrowser.open "succeeds" without launching anything
     procs = []
     if args.visible:
         if not env.get("DISPLAY"):
@@ -189,10 +253,13 @@ def main() -> int:
             return 2
         env["DISPLAY"] = f":{number}"
     port = free_port()
+    # The driver's own log is kept: a "Remote end closed connection" failure is otherwise opaque.
+    driver_log = open(OUT / "tauri-driver.log", "w")
     procs.append(subprocess.Popen([driver, "--port", str(port), "--native-port", str(free_port())], env=env,
-                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+                                  stdout=driver_log, stderr=subprocess.STDOUT))
     time.sleep(2)
     wd = WD(f"http://127.0.0.1:{port}")
+    pairing_server = FakePairingServer(FAKE_PAIRING)
     steps = []
     known = []  # upstream outcomes the GUI correctly surfaced (e.g. a busy machine); reported, not failed
     try:
@@ -257,18 +324,64 @@ def main() -> int:
         assert shell.returncode == 0 and "uninstall" in shell.stdout, (shell.stdout, shell.stderr)
         steps.append("a new login shell finds `aipotluck-local-client` on PATH and runs it")
 
-        wd.click_button("Paste instead")
-        wd.type_into("textarea.paste", json.dumps(FAKE_PAIRING))
-        wd.shot("4-pasted")
+        # One-click is the default; the paste box stays tucked away until asked for.
         page = wd.text()
-        assert FAKE_PAIRING["tunnelSecret"] not in page, "secret visible on screen"
-        wd.click_button("Pair")
+        assert "Pair in your browser".lower() in page.lower(), f"one-click is not offered:\n{page}"
+        assert not wd.js("return !!document.querySelector('textarea.paste')"), "paste box shown by default"
+
+        # The hidden server override: near-invisible in the footer until used.
+        quiet = wd.js("const b = document.querySelector('footer button[aria-label=\"Pairing server\"]');"
+                      "return b ? [b.innerText.trim(), getComputedStyle(b).opacity] : null")
+        assert quiet and quiet[0] == "" and float(quiet[1]) < 1, f"override control is not subtle: {quiet}"
+        wd.click_css('footer button[aria-label="Pairing server"]')
+        wd.wait_for("For testing only", 10, "4-override-open")
+        wd.type_into('input[aria-label="Pairing server URL"]', "http://develop.aipotluck.org")
+        wd.click_button("Use")
+        page = wd.wait_for("plain http", 20, "4-override-refused")  # upstream's own rule, verbatim
+        wd.shot("4-override-refused")
+        wd.type_into('input[aria-label="Pairing server URL"]', pairing_server.url + "/", clear=True)
+        wd.click_button("Use")
+        host = pairing_server.url.split("://", 1)[1]
+        page = wd.wait_for(f"pairing with {host}", 20, "4-override-set", absent="For testing only")
+        wd.shot("4-override-set")
+        settings = json.loads((home / ".local" / "share" / "aipotluck" / "gui-settings.json").read_text())
+        # Saved in upstream's normalized form (trailing slash dropped), the exact --server-url login gets.
+        assert settings == {"server_url": pairing_server.url}, settings
+        steps.append("hidden footer override refused plain http to a remote host (upstream's rule), accepted the stand-in server, and the footer now names it")
+
+        # Cancel while it waits: nothing changes.
+        wd.click_button("Pair in your browser")
+        page = wd.wait_for("/chat/local-inference/pair", 120, "4-oneclick-link")
+        wd.shot("4-oneclick-waiting")
+        assert pairing_server.url in page, f"link does not point at the overridden server:\n{page}"
+        assert "We opened this link in your browser" in page, page
+        end = time.time() + 30
+        while pairing_server.polls == 0 and time.time() < end:
+            time.sleep(0.5)
+        assert pairing_server.polls > 0, "upstream never polled the overridden server"
+        wd.click_button("Cancel")
+        page = wd.wait_for("Pairing cancelled", 30, "4-oneclick-cancel")
+        assert "nothing was changed" in page.lower(), page
+        runtime = json.loads((home / ".config" / "aipotluck" / "runtime.json").read_text())
+        assert runtime["logged_in"] is False, "a cancelled pairing changed runtime.json"
+        assert not wd.js("return !!document.querySelector('[role=alert]')"), "a cancel was shown as an error"
+        steps.append(f"one-click: link to the stand-in server shown, upstream polled it ({pairing_server.polls}x), Cancel left the device unpaired")
+
+        # Again, and approve it this time.
+        polls_before = pairing_server.polls
+        wd.click_button("Pair in your browser")
+        wd.wait_for("/chat/local-inference/pair", 120, "4-oneclick-link-2")
+        end = time.time() + 30
+        while pairing_server.polls == polls_before and time.time() < end:
+            time.sleep(0.5)
+        pairing_server.approve()
         wd.wait_for("Sharing with AI Potluck", 300, "4-pair")
         runtime = json.loads((home / ".config" / "aipotluck" / "runtime.json").read_text())
         assert runtime["logged_in"] is True and runtime["tunnel"]["id"] == FAKE_PAIRING["tunnelId"]
-        assert not list((home / ".local" / "share" / "aipotluck" / "gui-runtime").glob(".pairing-*.json")), \
-            "pairing temp file was not cleaned up"
-        steps.append("paired via upstream `cli login`; temp credentials file removed")
+        page = wd.text()
+        log_text = wd.js("const l = document.querySelector('pre.log'); return l ? l.textContent : ''") or ""
+        assert FAKE_PAIRING["tunnelSecret"] not in page + log_text, "secret visible on screen"
+        steps.append("one-click: the stand-in approved and upstream's `cli login` paired the device; the secret never reached the window")
 
         # One combined status light; each component's own line is in the card's data-detail
         # (also its hover tooltip). With the fake pairing the connection can never come up, so
@@ -372,11 +485,27 @@ def main() -> int:
                 f"deleted model still listed:\nlist: {listed!r}\n{page}")
             steps.append(f"deleted {SECOND_MODEL} through DELETE /models after confirming")
 
-        wd.click_button("Unpair")
+        wd.click_button_when_enabled("Unpair")
         wd.wait_for("Pair with AI Potluck", 120, "7-unpair"); wd.shot("7-unpaired")
         runtime = json.loads((home / ".config" / "aipotluck" / "runtime.json").read_text())
         assert runtime["logged_in"] is False and "tunnel" not in runtime
         steps.append("unpaired via upstream `cli logout`")
+
+        # The manual fallback still works.
+        wd.click_button("Paste the code instead")
+        wd.type_into("textarea.paste", json.dumps(FAKE_PAIRING))
+        wd.shot("8-pasted")
+        assert FAKE_PAIRING["tunnelSecret"] not in wd.text(), "secret visible on screen"
+        time.sleep(0.5)  # let the textarea's binding enable the button
+        wd.click_css("button.pair-pasted")
+        wd.wait_for("Sharing with AI Potluck", 300, "8-pair-pasted")
+        runtime = json.loads((home / ".config" / "aipotluck" / "runtime.json").read_text())
+        assert runtime["logged_in"] is True and runtime["tunnel"]["id"] == FAKE_PAIRING["tunnelId"]
+        assert not list((home / ".local" / "share" / "aipotluck" / "gui-runtime").glob(".pairing-*.json")), \
+            "pairing temp file was not cleaned up"
+        wd.click_button_when_enabled("Unpair")
+        wd.wait_for("Pair with AI Potluck", 120, "8-unpair")
+        steps.append("manual fallback: pasted code paired via `cli login --credentials-file`; temp file removed; unpaired")
 
         # Disabled while a task (the unpair just above) is still finishing.
         end = time.time() + 30
@@ -384,7 +513,7 @@ def main() -> int:
             assert time.time() < end, "Uninstall stayed disabled"
             time.sleep(0.5)
         wd.click_button("Uninstall")
-        wd.wait_for("Uninstall AI Potluck?", 10, "8-dialog"); wd.shot("8-uninstall-dialog")
+        wd.wait_for("Uninstall AI Potluck?", 10, "9-dialog"); wd.shot("9-uninstall-dialog")
         boxes = wd.js("return [...document.querySelectorAll('dialog input[type=checkbox]')]"
                       ".map(b => [b.closest('label').innerText.trim(), b.checked, b.disabled])")
         assert boxes == [["GUI files", True, True], ["CLI files", True, False], ["Model cache", False, False]], boxes
@@ -428,6 +557,7 @@ def main() -> int:
             print("  ok:", s, file=sys.stderr)
         return 1
     finally:
+        pairing_server.close()
         wd.quit()
         for p in reversed(procs):
             p.send_signal(signal.SIGTERM)

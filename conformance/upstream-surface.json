@@ -803,9 +803,9 @@
       "tunnel"
     ]
   },
-  "source_commit": "1573c329a5485adfa535586251c9a40956f95f0e",
+  "source_commit": "21067d73e05d75d29e08bf3cec3cecfa32dac1a8",
   "source_repo": "aitpotluck-local-client",
-  "source_subject": "feat(cli): uninstall --models-only deletes every model and keeps the install",
+  "source_subject": "feat(installer): put the CLI on the user's PATH on Linux and macOS too",
   "tunnel": {
     "argv": [
       {

@@ -320,7 +320,6 @@ details > summary {
 footer {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
 	gap: var(--ds-space-3);
 	padding: var(--ds-space-3) var(--ds-space-6);
 	color: var(--ds-fg-3);
@@ -330,6 +329,8 @@ footer {
 }
 
 footer .btn.uninstall {
+	/* Right-aligned: the version label and the pairing-server override stay together on the left. */
+	margin-left: auto;
 	height: var(--ds-control-sm, 28px);
 	padding: 0 var(--ds-space-2);
 	font-size: var(--ds-text-micro);
@@ -418,4 +419,28 @@ footer .btn.uninstall {
 }
 .input[aria-invalid='true'] {
 	border-color: var(--ds-accent-2);
+}
+
+/* One-click pairing: the link upstream printed, cut to one line (the full URL is its tooltip). */
+.pair-link {
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	color: var(--ds-fg-2);
+}
+/* A text link inside a sentence, for a secondary action that doesn't deserve a button. */
+.link-inline {
+	background: none;
+	border: none;
+	padding: 0;
+	font: inherit;
+	color: var(--ds-fg-1);
+	text-decoration: underline;
+	cursor: pointer;
+}
+footer .footer-text {
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
 }

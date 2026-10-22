@@ -7,6 +7,14 @@ export type ServiceResponse<T = unknown> = { status: number; body: T };
 export type PairingPreview = { tunnel_id: string; tunnel_endpoint: string };
 export type TaskLine = { task: string; line: string };
 export type TaskDone = { task: string; code: number; ok: boolean };
+/** Which server one-click pairing uses, as upstream resolves it (sidecar/gui_server.py). */
+export type PairingServer = {
+	default: string;
+	effective: string | null;
+	from_env: string | null;
+	error: string | null;
+	override: string | null;
+};
 
 export const api = {
 	appState: () => invoke<AppState>('app_state'),
@@ -17,6 +25,11 @@ export const api = {
 	modelSize: (modelHf: string) => invoke<InstallPlan['model']>('model_size', { modelHf }),
 	clipboardPairing: () => invoke<PairingPreview | null>('clipboard_pairing'),
 	pair: (pasted?: string) => invoke<void>('pair', { pasted: pasted ?? null }),
+	pairOneClick: () => invoke<void>('pair_one_click'),
+	cancelPairing: () => invoke<void>('cancel_pairing'),
+	pairingServer: () => invoke<PairingServer>('pairing_server'),
+	setPairingServer: (serverUrl: string | null) => invoke<PairingServer>('set_pairing_server', { serverUrl }),
+	openUrl: (url: string) => invoke<void>('open_link', { url }),
 	unpair: () => invoke<void>('unpair'),
 	openSettingsPage: () => invoke<void>('open_settings_page'),
 	uninstallInfo: () => invoke<{ app_install: string; note: string | null }>('uninstall_info'),

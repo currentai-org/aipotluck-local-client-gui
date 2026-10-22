@@ -5,6 +5,7 @@
 #   upstream-<sha>.tar.gz          `git archive` of the pinned upstream/aitpotluck-local-client submodule commit
 #   gui_probe.py                   our read-only state probe (sidecar/gui_probe.py)
 #   gui_plan.py                    our read-only install plan (sidecar/gui_plan.py)
+#   gui_server.py                  which AI Potluck server pairing uses, per upstream (sidecar/gui_server.py)
 #   manifest.json                  what the app checks before unpacking
 #
 #   tools/stage-runtime.sh [--target linux-x64|linux-arm64|macos-arm64|macos-x64|windows-x64]
@@ -59,7 +60,7 @@ print(d)' "$1" "$2" | tr -d '\r'; }
   echo "upstream submodule missing -- run: git submodule update --init upstream/aitpotluck-local-client" >&2; exit 2; }
 
 mkdir -p "$CACHE" "$OUT"
-rm -f "$OUT"/*.tar.gz "$OUT"/manifest.json "$OUT"/gui_probe.py "$OUT"/gui_plan.py
+rm -f "$OUT"/*.tar.gz "$OUT"/manifest.json "$OUT"/gui_*.py
 
 # ---------------------------------------------------------------- python-build-standalone
 PY_TAG="$(json_get "$PIN" tag)"
@@ -88,6 +89,7 @@ git -C "$UPSTREAM" archive --format=tar "$UP_SHA" | gzip -n -9 > "$OUT/$UP_OUT"
 
 cp "$ROOT/sidecar/gui_probe.py" "$OUT/gui_probe.py"
 cp "$ROOT/sidecar/gui_plan.py" "$OUT/gui_plan.py"
+cp "$ROOT/sidecar/gui_server.py" "$OUT/gui_server.py"
 
 cat > "$OUT/manifest.json" <<EOF
 {
