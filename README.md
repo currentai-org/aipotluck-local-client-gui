@@ -16,9 +16,11 @@ and Windows builds are unsigned.**
 3. On aipotluck.org go to **Settings → Local Inference → Add a managed server → Pair → Copy**, then
    switch back to the app and click **Pair this computer**.
 
-The server keeps running in the background (a systemd user service) after the window closes,
-exactly like a CLI install. The `aipotluck-local-client` command is installed too, for anyone who
-wants it.
+The server keeps running in the background after the window closes (a systemd user service on
+Linux, a launchd agent on macOS, a logon Scheduled Task on Windows), exactly like a CLI install.
+Set up also puts the `aipotluck-local-client` command on your PATH, for you only and with no admin
+needed, so the app and the command line can be used interchangeably. Open a new terminal after Set
+up to use it. Uninstall removes it again.
 
 ## Building
 
