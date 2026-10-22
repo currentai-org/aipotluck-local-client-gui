@@ -36,7 +36,8 @@ tools/check.sh            # the merge gate
 Installers are built by GitHub Actions (`.github/workflows/build.yml`). Linux x64 and arm64 and
 Windows x64 and macOS arm64 and x64 build today. Every push to `main`
 updates the **nightly** prerelease, and a `v*.*.*` tag makes a draft release. See
-[docs/RELEASING.md](docs/RELEASING.md). To build any target the way CI does:
+[docs/RELEASING.md](docs/RELEASING.md); `tools/release.sh prepare|tag <version>` cuts one. To build
+any target the way CI does:
 `tools/build.sh --release-target <target>`.
 
 ## Layout
