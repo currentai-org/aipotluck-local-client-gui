@@ -191,11 +191,19 @@ impl Runtime {
 
     /// What Set up would install and how big each part is (sidecar/gui_plan.py). Reads only; asks
     /// Hugging Face and GitHub for sizes, so it can take a few seconds.
-    pub fn plan(&self, model_hf: Option<&str>, model_only: bool) -> Result<serde_json::Value, String> {
+    pub fn plan(
+        &self,
+        model_hf: Option<&str>,
+        backend: Option<&str>,
+        model_only: bool,
+    ) -> Result<serde_json::Value, String> {
         let mut cmd = self.python_cmd();
         cmd.arg(&self.plan_script);
         if let Some(m) = model_hf {
             cmd.arg(format!("--model-hf={m}"));
+        }
+        if let Some(b) = backend {
+            cmd.arg(format!("--backend={b}"));
         }
         if model_only {
             cmd.arg("--model-only");

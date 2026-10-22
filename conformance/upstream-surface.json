@@ -49,10 +49,10 @@
   "cli": {
     "files": {
       "cli.py": {
-        "sha256": "05ca16964a48cd23cf5e532c1c486efc71eb33c7ba1a5eab015f7ea8de655f4e"
+        "sha256": "c11cc71a7be325ed8bb429467e16b91ca5230379a7dc84d72bbc0dcc6b2a8e54"
       },
       "install.py": {
-        "sha256": "746d61a1f00415b4c7f42290f1a5a99fc5be6a0362d1457f380b452879140dcd"
+        "sha256": "c5ce832352e67117556f1f0811789cfd31f1299c8bc32336135d9eead744a043"
       }
     },
     "install_choice_sets": {
@@ -61,7 +61,8 @@
         "cpu",
         "cuda",
         "vulkan",
-        "rocm"
+        "rocm",
+        "metal"
       ],
       "--via": [
         "direct"
@@ -85,10 +86,11 @@
           "cpu",
           "cuda",
           "vulkan",
-          "rocm"
+          "rocm",
+          "metal"
         ],
         "default": "auto",
-        "help": "GPU backend to use (default: auto-detect, falls back to cpu)",
+        "help": "GPU backend to use (default: auto-detect, falls back to cpu; Apple-silicon Macs are metal)",
         "names": [
           "--backend"
         ],
@@ -365,7 +367,7 @@
           "--credentials-file": {
             "choices": null,
             "default": null,
-            "help": "Read the pairing JSON ({tunnelId, tunnelSecret, tunnelEndpoint}) from this file instead of pasting it -- the same JSON Settings -> Local Inference's Copy button copies. Mutually exclusive with --tunnel-id/--tunnel-secret/--tunnel-endpoint.",
+            "help": "Read the pairing JSON ({tunnelId, tunnelSecret, tunnelEndpoint}) from this file instead of pairing in a browser -- the same JSON Settings -> Local Inference's Copy button copies. Mutually exclusive with --tunnel-id/--tunnel-secret/--tunnel-endpoint.",
             "names": [
               "--credentials-file"
             ],
@@ -373,10 +375,21 @@
             "takes_value": true,
             "type": "Path"
           },
+          "--server-url": {
+            "choices": null,
+            "default": null,
+            "help": null,
+            "names": [
+              "--server-url"
+            ],
+            "required": false,
+            "takes_value": true,
+            "type": null
+          },
           "--tunnel-endpoint": {
             "choices": null,
             "default": null,
-            "help": "Skip the prompt (scripting only)",
+            "help": "Skip browser pairing (scripting only)",
             "names": [
               "--tunnel-endpoint"
             ],
@@ -387,7 +400,7 @@
           "--tunnel-id": {
             "choices": null,
             "default": null,
-            "help": "Skip the prompt (scripting only); must be given with the other two --tunnel-* flags, and not with --credentials-file",
+            "help": "Skip browser pairing (scripting only); must be given with the other two --tunnel-* flags, and not with --credentials-file",
             "names": [
               "--tunnel-id"
             ],
@@ -398,7 +411,7 @@
           "--tunnel-secret": {
             "choices": null,
             "default": null,
-            "help": "Skip the prompt (scripting only)",
+            "help": "Skip browser pairing (scripting only)",
             "names": [
               "--tunnel-secret"
             ],
@@ -407,7 +420,7 @@
             "type": null
           }
         },
-        "help": "Pair this device with a managed tunnel endpoint",
+        "help": "Pair this device with a managed tunnel endpoint (one-click in a browser by default)",
         "inherits_shared_flags": false
       },
       "logout": {
@@ -501,6 +514,46 @@
         "flags": {},
         "help": "Query the running service's login/tunnel/llama-server state",
         "inherits_shared_flags": false
+      },
+      "uninstall": {
+        "choice_sets": {},
+        "flags": {
+          "--models-only": {
+            "choices": null,
+            "default": null,
+            "help": "Delete every downloaded model and leave the rest of the install (and the service) in place",
+            "names": [
+              "--models-only"
+            ],
+            "required": false,
+            "takes_value": false,
+            "type": null
+          },
+          "--remove-models": {
+            "choices": null,
+            "default": null,
+            "help": "Also delete every downloaded model (the Hugging Face cache llama.cpp uses); kept by default",
+            "names": [
+              "--remove-models"
+            ],
+            "required": false,
+            "takes_value": false,
+            "type": null
+          },
+          "--yes": {
+            "choices": null,
+            "default": null,
+            "help": "Skip the confirmation prompt (required when there's no terminal to prompt on)",
+            "names": [
+              "--yes"
+            ],
+            "required": false,
+            "takes_value": false,
+            "type": null
+          }
+        },
+        "help": "Stop and remove the background service, and delete llama.cpp, newt, config, logs and downloads",
+        "inherits_shared_flags": false
       }
     }
   },
@@ -556,10 +609,12 @@
         "linux-x64-cuda",
         "linux-x64-rocm",
         "linux-x64-vulkan",
-        "macos-arm64-cpu",
+        "macos-arm64-metal",
         "macos-x64-cpu",
         "windows-arm64-cpu",
-        "windows-x64-cpu"
+        "windows-x64-cpu",
+        "windows-x64-cuda",
+        "windows-x64-vulkan"
       ],
       "tag": "b10989",
       "unverified_assets": []
@@ -573,9 +628,7 @@
         "windows-x64"
       ],
       "tag": "1.18.1",
-      "unverified_assets": [
-        "windows-x64"
-      ]
+      "unverified_assets": []
     },
     "requires_python": ">=3.9"
   },
@@ -681,7 +734,7 @@
         "sha256": "22a0ea1c5d95a6e22605fe4e69c0f79fec013b09026a679b3a00accf7a998ecd"
       },
       "runner.py": {
-        "sha256": "58c9f57d9fec695923aea5a5eed2beefc66c1eaa85e5f686d908d5cd68223127"
+        "sha256": "20e7c947921473562476407d9d58bed40c5cb23b9a84d0b3c27dc709c645f5c3"
       }
     },
     "fingerprint_version": 1,
@@ -750,9 +803,9 @@
       "tunnel"
     ]
   },
-  "source_commit": "5a4736e9522fa22fb79112c3dac2e14e3beab538",
+  "source_commit": "1573c329a5485adfa535586251c9a40956f95f0e",
   "source_repo": "aitpotluck-local-client",
-  "source_subject": "Merge branch 'andrewtergis/cur-1966-support-for-macos-in-cpu-mode'",
+  "source_subject": "feat(cli): uninstall --models-only deletes every model and keeps the install",
   "tunnel": {
     "argv": [
       {
@@ -797,7 +850,7 @@
     "error_prefix": "ERROR:",
     "files": {
       "newt_supervisor.py": {
-        "sha256": "335ce33a2155e921f831a6fc0a9cffb016f085cb9e285a5b05b5486c847846f2"
+        "sha256": "4fcd7d796825f1f907583c480065a496c7359fa132c8abc12b2f79e4e880f58f"
       }
     },
     "flags": [

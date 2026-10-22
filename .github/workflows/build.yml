@@ -8,9 +8,9 @@
 #   workflow_dispatch         build; `only` picks one target -- even a DISABLED one -- so a new
 #                             platform can be tried in CI without enabling it for every push
 #
-# Only enabled targets build by default (Linux today). Windows and macOS are declared but disabled
-# until they've been proven locally with `tools/build.sh --release-target <t>`; then flip
-# "enabled" in .github/build-targets.json. See docs/RELEASING.md.
+# Only enabled targets build by default: Linux, Windows and macOS today, each switched on only after
+# it was proven locally with `tools/build.sh --release-target <t>` (flip "enabled" in
+# .github/build-targets.json). See docs/RELEASING.md.
 #
 # GPU support is not a build dimension: one binary per OS x CPU arch covers CUDA/Metal/Vulkan/ROCm,
 # because the bundled CLI downloads the matching llama.cpp asset on the user's machine at setup.

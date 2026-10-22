@@ -318,11 +318,21 @@ details > summary {
 }
 
 footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--ds-space-3);
 	padding: var(--ds-space-3) var(--ds-space-6);
 	color: var(--ds-fg-3);
 	font-family: var(--ds-font-mono);
 	font-size: var(--ds-text-micro);
 	border-top: var(--ds-border-hairline) solid var(--ds-line-1);
+}
+
+footer .btn.uninstall {
+	height: var(--ds-control-sm, 28px);
+	padding: 0 var(--ds-space-2);
+	font-size: var(--ds-text-micro);
 }
 
 /* Setup plan: what will be installed, one row per part, size right. */
