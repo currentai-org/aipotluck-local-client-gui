@@ -23,6 +23,8 @@ export type AppState =
 			settings_url: string;
 			/** The hidden pairing-server override, or null for upstream's default (aipotluck.org). */
 			server_url_override?: string | null;
+			/** The Intel macOS build running on an Apple silicon Mac, under Rosetta. */
+			rosetta?: boolean;
 	  };
 
 /** Upstream's GET /status, the fields this UI reads. Everything else is ignored, never rejected. */
