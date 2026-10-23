@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Publish a directory of installers as the rolling `nightly` prerelease.
+# Publish a directory of installers as one nightly: its own dated prerelease (the history), and the
+# rolling `nightly` prerelease (fixed "latest nightly" download links).
 #
 #   tools/publish-nightly.sh <dist-dir> <label>
 #
@@ -8,7 +9,10 @@
 #   <label>      e.g. 0.1.0-nightly.20261011.2cbd67a (must match the file names)
 #
 # What it does, in this order, so a failure part-way leaves the previous nightly downloadable:
-#   1. build the upload set: every installer under its labelled name AND under a stable
+#   0. publish this build's own prerelease, tagged nightly-<YYYYMMDD>.<sha> and titled "GUI v<label>",
+#      with the labelled installers and their SHA256SUMS. One per nightly, kept, so there's a
+#      history to go back to; rerunning for the same build replaces its files rather than failing
+#   1. build the rolling release's upload set: every installer under its labelled name AND under a stable
 #      `..._nightly_<target>.<ext>` name (a fixed URL for "the latest nightly" links), plus one
 #      combined SHA256SUMS covering both
 #   2. create the `nightly` release (prerelease) if it doesn't exist yet
@@ -24,9 +28,13 @@ LABEL="${2:?usage: publish-nightly.sh <dist-dir> <label>}"
 : "${GITHUB_REPOSITORY:?}" "${GITHUB_SHA:?}"
 TAG=nightly
 NAME=aipotluck-local-client-gui
+# The label is <version>-nightly.<YYYYMMDD>.<sha7>. Not "v..." on purpose: build.yml treats a pushed
+# v*.*.* tag as a release.
+DATED_TAG="nightly-${LABEL#*-nightly.}"
 REPO=(--repo "$GITHUB_REPOSITORY")
 
 case "$LABEL" in *[!0-9A-Za-z.+-]*|"") echo "bad label: $LABEL" >&2; exit 2 ;; esac
+case "$LABEL" in *-nightly.[0-9]*.*) ;; *) echo "not a nightly label (<version>-nightly.<date>.<sha>): $LABEL" >&2; exit 2 ;; esac
 shopt -s nullglob
 real=()
 for f in "$DIST/${NAME}_${LABEL}_"*; do real+=("$f"); done
@@ -36,20 +44,34 @@ for f in "$DIST"/"${NAME}"_*; do
   case "$(basename "$f")" in "${NAME}_${LABEL}_"*) ;; *) echo "unexpected file in $DIST: $f" >&2; exit 1 ;; esac
 done
 
-# 1. the upload set (the per-target SHA256SUMS.<target> files are superseded by one combined file)
-STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
+sums() { (cd "$1" && if command -v sha256sum >/dev/null; then sha256sum -- *; else shasum -a 256 -- *; fi); }
+
+# 0. this build's own dated prerelease: the labelled installers and one SHA256SUMS for them
+DATED="$(mktemp -d)"; STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE" "$DATED"' EXIT
+for f in "${real[@]}"; do cp "$f" "$DATED/$(basename "$f")"; done
+DSUMS="$(mktemp)"; sums "$DATED" > "$DSUMS"; mv "$DSUMS" "$DATED/SHA256SUMS"
+dated_notes="Nightly build of \`main\` at ${GITHUB_SHA}. **Not a release**: untested beyond CI, unsigned on macOS and Windows.
+
+The newest nightly is always at the \`${TAG}\` prerelease too. Verify downloads against \`SHA256SUMS\`."
+if gh release view "$DATED_TAG" "${REPO[@]}" >/dev/null 2>&1; then
+  gh release upload "$DATED_TAG" "$DATED"/* --clobber "${REPO[@]}"
+else
+  gh release create "$DATED_TAG" "$DATED"/* "${REPO[@]}" --prerelease --latest=false \
+    --target "$GITHUB_SHA" --title "GUI v${LABEL}" --notes "$dated_notes"
+fi
+
+# 1. the rolling release's upload set (per-target SHA256SUMS.<target> files give way to one file)
 for f in "${real[@]}"; do
   b="$(basename "$f")"
   cp "$f" "$STAGE/$b"
   cp "$f" "$STAGE/${NAME}_nightly_${b#"${NAME}_${LABEL}_"}"
 done
-SUMS="$(mktemp)"
-(cd "$STAGE" && if command -v sha256sum >/dev/null; then sha256sum -- *; else shasum -a 256 -- *; fi) > "$SUMS"
-mv "$SUMS" "$STAGE/SHA256SUMS"
+SUMS="$(mktemp)"; sums "$STAGE" > "$SUMS"; mv "$SUMS" "$STAGE/SHA256SUMS"
 upload=("$STAGE"/*)
 
-title="Nightly build ($LABEL)"
+title="GUI latest nightly (v${LABEL})"
 notes="Automatic build of \`main\` at ${GITHUB_SHA}. **Not a release**: untested beyond CI, unsigned on macOS and Windows.
+This build is also kept as its own prerelease, \`${DATED_TAG}\`, with the earlier nightlies.
 
 Stable links to the newest nightly use the \`_nightly_\` file names, e.g.
 \`https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${NAME}_nightly_linux-x64.deb\`.
@@ -79,4 +101,4 @@ gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" -f sha="$GITHU
   || gh api -X POST "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/tags/${TAG}" -f sha="$GITHUB_SHA" >/dev/null
 gh release edit "$TAG" "${REPO[@]}" --prerelease --latest=false --title "$title" --notes "$notes"
 
-echo "published nightly $LABEL ($(echo "$keep" | wc -l | tr -d ' ') assets) at $GITHUB_SHA"
+echo "published nightly $LABEL as $DATED_TAG and $TAG ($(echo "$keep" | wc -l | tr -d ' ') assets) at $GITHUB_SHA"
