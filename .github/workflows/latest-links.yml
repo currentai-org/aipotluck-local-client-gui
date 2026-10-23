@@ -1,0 +1,44 @@
+# aipotluck.org's GUI download links, checked the moment a release is published.
+#
+# aipotluck.org links releases/latest/download/<fixed name> for every name in
+# .github/latest-download-names.txt, so whichever release is marked Latest is what the site serves.
+# Publishing is when that changes, and when it can break: a release without the fixed-name files,
+# a dropped target, or the wrong release marked Latest. tools/check-latest-links.sh follows each
+# link and requires it to reach the release just published.
+#
+#   release: published     every full release (prereleases, the nightlies, are skipped: they're
+#                          never Latest)
+#   workflow_dispatch      re-check by hand, e.g. after fixing a red run or re-marking Latest
+#
+# A red run means aipotluck.org's download buttons 404 or serve an older release right now. The
+# job log lists each bad link and the fix; docs/RELEASING.md, "Fixed latest download links", has
+# the full procedure.
+
+name: latest-links
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The release that should be Latest (e.g. v0.2.0)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: aipotluck.org download links
+    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Every fixed name leads to this release
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          tools/check-latest-links.sh "$TAG" | tee -a "$GITHUB_STEP_SUMMARY"

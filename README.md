@@ -38,7 +38,9 @@ tools/check.sh            # the merge gate
 Installers are built by GitHub Actions (`.github/workflows/build.yml`). Linux x64 and arm64 and
 Windows x64 and macOS arm64 and x64 build today. A daily build at 04:00 UTC
 publishes a **nightly** prerelease when `main` has moved, and a `v*.*.*` tag makes a draft release. See
-[docs/RELEASING.md](docs/RELEASING.md); `tools/release.sh prepare|tag <version>` cuts one. To build
+[docs/RELEASING.md](docs/RELEASING.md); `tools/release.sh prepare|tag <version>` cuts one. aipotluck.org links
+the newest release's installers by fixed names (`releases/latest/download/...`); the names are a
+contract kept in `.github/latest-download-names.txt` (RELEASING.md, "Fixed latest download links"). To build
 any target the way CI does:
 `tools/build.sh --release-target <target>`.
 
