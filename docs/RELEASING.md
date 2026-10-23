@@ -49,6 +49,11 @@ One installer set per **OS × CPU architecture**, declared in
 | macos-arm64 | ✅ | `macos-15` | `.dmg`, `.app.zip` | must |
 | macos-x64 | ✅ | `macos-15` (cross-compiled) | `.dmg`, `.app.zip` | optional |
 
+The two macOS builds are for different Macs: `macos-arm64` for Apple silicon (M1 and later),
+`macos-x64` for Intel Macs only. The Intel build does run on Apple silicon, but under Rosetta, and
+much slower; the app shows a banner saying so. CI checks each `.app` (`tools/check-macos-arch.sh`)
+holds only its own architecture, and the release notes say which download to pick.
+
 Windows ships the NSIS installer only. The MSI (`nsis,msi`) has never been built: WiX's `light.exe`
 needs the Windows Installer service, which the remote session used to prove the Windows build
 couldn't reach. Try it with one `only: windows-x64` dispatch before adding it, since a failing MSI

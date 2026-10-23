@@ -126,6 +126,23 @@ fn ensure_hosted_service(state: &AppState, rt: &Runtime, probe: &Value) -> Resul
     Ok(true)
 }
 
+/// True when this is the Intel build running on an Apple silicon Mac (Rosetta 2 translates every
+/// instruction, and the bundled CLI's Python with it). `sysctl.proc_translated` is 1 then, 0 for a
+/// native process, and missing on Intel Macs.
+#[cfg(target_os = "macos")]
+fn translated_by_rosetta() -> bool {
+    std::process::Command::new("/usr/sbin/sysctl")
+        .args(["-n", "sysctl.proc_translated"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "1")
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn translated_by_rosetta() -> bool {
+    false
+}
+
 #[tauri::command]
 async fn app_state(state: State<'_, AppState>) -> Result<Value, String> {
     let rt = match rt(&state) {
@@ -152,6 +169,7 @@ async fn app_state(state: State<'_, AppState>) -> Result<Value, String> {
         "busy": *state.busy.lock().unwrap(),
         "settings_url": SETTINGS_URL,
         "server_url_override": settings::load_from(&settings::path()).server_url,
+        "rosetta": translated_by_rosetta(),
     }))
 }
 
@@ -607,15 +625,20 @@ fn uninstall_app(app: AppHandle, remove_cli: bool, remove_models: bool) -> Resul
     std::thread::spawn(move || {
         let emit_app = app.clone();
         let code = if run_cli {
-            rt.run_module_streaming("aipotluck.installer.cli", &args, |_| {}, move |line| {
-                let _ = emit_app.emit(
-                    "task-log",
-                    TaskLine {
-                        task: "uninstall",
-                        line: line.to_string(),
-                    },
-                );
-            })
+            rt.run_module_streaming(
+                "aipotluck.installer.cli",
+                &args,
+                |_| {},
+                move |line| {
+                    let _ = emit_app.emit(
+                        "task-log",
+                        TaskLine {
+                            task: "uninstall",
+                            line: line.to_string(),
+                        },
+                    );
+                },
+            )
             .unwrap_or_else(|e| {
                 let _ = app.emit(
                     "task-log",

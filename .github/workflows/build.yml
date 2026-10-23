@@ -187,6 +187,14 @@ jobs:
           tools/collect-bundles.sh "${{ matrix.target }}" --rust-target "${{ matrix.rust_target }}" \
             --out dist --label "${{ needs.plan.outputs.label }}"
 
+      # The Apple silicon download must not hold an Intel binary (or vice versa): it would run under
+      # Rosetta on every M-series Mac. Checks the app and the Python runtime it bundles.
+      - name: macOS architecture
+        if: runner.os == 'macOS'
+        run: |
+          tools/check-macos-arch.sh "$(ls dist/*_${{ matrix.target }}.app.zip)" "${{ matrix.target }}" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Linux glibc floor
         if: runner.os == 'Linux'
         run: |
@@ -297,5 +305,9 @@ jobs:
             # the note below (tools/release.sh makes the tag).
             gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
               --title "aipotluck-local-client-gui $VERSION" --generate-notes \
-              --notes "Unsigned build. See SHA256SUMS to verify downloads. Built from ${GITHUB_SHA}. First open on macOS: System Settings -> Privacy & Security -> Open Anyway. On Windows: More info -> Run anyway."
+              --notes-file <(printf '%s\n' \
+                "**Which macOS download?** Apple silicon (M1 and later): \`_macos-arm64.dmg\`. Intel Macs only: \`_macos-x64.dmg\`. The Intel build runs on Apple silicon only under Rosetta, and much slower." \
+                "" \
+                "Unsigned build. See SHA256SUMS to verify downloads. Built from ${GITHUB_SHA}." \
+                "First open on macOS: System Settings -> Privacy & Security -> Open Anyway. On Windows: More info -> Run anyway.")
           fi

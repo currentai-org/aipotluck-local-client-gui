@@ -59,6 +59,10 @@ def repos(tmp_path):
     for f in FILES + ["tools/release.sh", "tools/release_version.py"]:
         (gui / f).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / f, gui / f)
+    # The copies carry whatever version the real repo is at (0.2.0 since the v0.2.0 release), and every
+    # test below prepares 0.2.0. Start from 0.1.0 explicitly, so the tests don't depend on the version.
+    subprocess.run([sys.executable, "tools/release_version.py", "--set", "0.1.0"], cwd=gui, check=True,
+                   capture_output=True)
     git(gui, "submodule", "add", "-q", str(cli_bare), SUB)
     git(gui / SUB, "checkout", "-q", cli_main_commit)
     git(gui, "add", ".")
