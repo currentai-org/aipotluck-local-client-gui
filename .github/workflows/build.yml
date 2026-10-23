@@ -303,12 +303,19 @@ jobs:
           find s3dl -type f -exec mv -t dist {} +
           ls -la dist
 
-      - name: Combine checksums
+      # Adds the fixed ("latest") names aipotluck.org links to, and one SHA256SUMS for everything.
+      # Fails, creating no draft, if any name in .github/latest-download-names.txt would be missing
+      # (docs/RELEASING.md, "Fixed latest download links").
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: src
+
+      - name: Fixed names and checksums
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          cd dist
-          cat SHA256SUMS.* > SHA256SUMS
-          rm SHA256SUMS.*
-          ls -la
+          src/tools/stage-release.sh dist "$VERSION"
+          ls -la dist
 
       # A DRAFT release: nothing is downloadable until a person reviews it and clicks Publish.
       # Re-running on the same tag replaces the draft's assets rather than failing.

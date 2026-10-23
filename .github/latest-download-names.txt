@@ -1,0 +1,31 @@
+# The fixed ("latest") download names: a contract with aipotluck.org.
+#
+# Every published release carries each installer twice: under its versioned name
+# (aipotluck-local-client-gui_0.2.0_linux-x64.deb) and under the version-free name listed here
+# (aipotluck-local-client-gui_linux-x64.deb). GitHub serves the release marked Latest at
+#
+#   https://github.com/currentai-org/aipotluck-local-client-gui/releases/latest/download/<name>
+#
+# and aipotluck.org's Settings -> Local inference page links exactly those URLs, so publishing a
+# release updates every download link on the site with no change to the web app.
+#
+# Who reads this file:
+#   - tools/stage-release.sh: the draft release refuses to be created unless it holds every name below
+#   - tools/check-latest-links.sh (latest-links.yml, on Publish): every link must resolve to the
+#     release just published
+#   - tests/test_latest_links.py: this list must be exactly what the enabled targets in
+#     .github/build-targets.json produce
+#
+# Changing it (adding, removing or renaming a name) changes what aipotluck.org can link to. Follow
+# "Fixed latest download links" in docs/RELEASING.md: change this file and the web page together.
+# One name per line; blank lines and lines starting with # are ignored.
+
+aipotluck-local-client-gui_linux-x64.deb
+aipotluck-local-client-gui_linux-x64.AppImage
+aipotluck-local-client-gui_linux-arm64.deb
+aipotluck-local-client-gui_linux-arm64.AppImage
+aipotluck-local-client-gui_macos-arm64.dmg
+aipotluck-local-client-gui_macos-arm64.app.zip
+aipotluck-local-client-gui_macos-x64.dmg
+aipotluck-local-client-gui_macos-x64.app.zip
+aipotluck-local-client-gui_windows-x64.setup.exe

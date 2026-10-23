@@ -112,6 +112,7 @@ then flip it on.
 |---|---|---|
 | `check.yml` | every push to `main`, every PR | `tools/check.sh` (conformance, contract tests on the bundled Python, UI tests and type check, Rust tests) |
 | `build.yml` | PRs; daily at 04:00 UTC; `v*.*.*` tags; manual dispatch | builds the enabled targets (or `only`). Then PR: artifacts; schedule (or dispatch with `nightly`): nightly prereleases; tag: draft release titled "GUI vX.Y.Z" |
+| `latest-links.yml` | a full release is published; manual dispatch with a tag | follows every aipotluck.org download link (`releases/latest/download/<fixed name>`) and fails unless each reaches that release |
 
 ## Cutting a release
 
@@ -139,17 +140,105 @@ then flip it on.
 
    It then asks before creating and pushing the annotated tag (`--yes` skips the question).
 3. **The tag builds the release.** `build.yml` builds every enabled target and creates a **draft**
-   release with the installers, one `SHA256SUMS`, and notes GitHub generates from the PRs merged
-   since the last release. The `plan` job also refuses a tag that doesn't equal `v<version>`.
+   release with the installers (each under its versioned name *and* its fixed name, see below), one
+   `SHA256SUMS`, and notes GitHub generates from the PRs merged since the last release. The `plan`
+   job also refuses a tag that doesn't equal `v<version>`, and no draft is created if a fixed name
+   would be missing.
 4. **Review and publish.** When `build` is green, open **Releases → the draft**. Install at least
    one build on a real machine (CLAUDE.md, tests rule 3), edit the notes if needed, and click
-   **Publish**.
+   **Publish** with **"Set as the latest release"** ticked (the default for a full release).
+   Publishing moves every GUI download link on aipotluck.org to this release.
+5. **Check the `latest-links` run.** Publishing starts `latest-links.yml`, which follows each of
+   aipotluck.org's download links. Green: the site now serves this release. Red: see "Fixed latest
+   download links" below; the site's download buttons are broken until it's fixed.
 
 A pre-release works the same way (`tools/release.sh prepare 0.2.0-rc.1`). Tick "Set as a
 pre-release" on the draft before publishing.
 
 To rebuild a release's assets, re-run the failed jobs on the tag's workflow run. The release job
 replaces the draft's assets instead of failing.
+
+## Fixed latest download links
+
+aipotluck.org's **Settings → Local inference** page offers the app's installers without naming a
+version. It links
+
+```
+https://github.com/currentai-org/aipotluck-local-client-gui/releases/latest/download/<fixed name>
+```
+
+GitHub redirects that to the file of the same name in whichever release is marked **Latest** (never
+a draft or a prerelease, so never a nightly). Publishing a release therefore updates the site with
+no change, commit or deploy on the aipotluck.org side.
+
+For that to work, every release carries each installer twice: under its versioned name
+(`aipotluck-local-client-gui_0.2.0_linux-x64.deb`) and under a **fixed name**
+(`aipotluck-local-client-gui_linux-x64.deb`). The fixed names are the contract with the site, and
+they live in one file: **[`.github/latest-download-names.txt`](../.github/latest-download-names.txt)**.
+
+Three things hold that contract, each failing with a message that points here:
+
+| When | What | Fails if |
+|---|---|---|
+| every PR (`tools/check.sh`) | `tests/test_latest_links.py` | the list isn't exactly what the enabled targets in `build-targets.json` build |
+| building the draft (`build.yml`, `release` job) | `tools/stage-release.sh` adds the fixed-name copies | a listed name wasn't built, so no draft is created |
+| on Publish (`latest-links.yml`) | `tools/check-latest-links.sh <tag>` follows every link | a link reaches another release, or 404s |
+
+On the site's side the names are in `DOWNLOADS`, in
+`web/src/routes/chat/settings/(nav)/local-inference/+page.svelte` in `currentai-org/aipotluck.org`
+(its `docs/guides/local-client-downloads.md` points back here).
+
+### If `latest-links` fails
+
+The run's log lists every bad link and its cause. Until it's fixed, the site's download buttons
+for those files 404 or serve an older release.
+
+- **"Latest is not vX.Y.Z"**: another release is marked Latest, usually because "Set as the latest
+  release" was unticked on Publish, or an older release was re-marked later. Fix:
+  ```bash
+  gh release edit vX.Y.Z --repo currentai-org/aipotluck-local-client-gui --latest
+  ```
+  If the other release *should* be Latest, nothing is broken: re-run the check for that tag instead.
+- **"vX.Y.Z has no such file"**: the release lacks a fixed-name copy (published by hand, or files
+  deleted). Fix: upload the copies. From the release's own assets:
+  ```bash
+  V=X.Y.Z; R=currentai-org/aipotluck-local-client-gui; mkdir -p /tmp/fix && cd /tmp/fix
+  gh release download "v$V" --repo "$R" --pattern "aipotluck-local-client-gui_${V}_*"
+  for f in aipotluck-local-client-gui_${V}_*; do mv "$f" "${f/_${V}_/_}"; done
+  gh release upload "v$V" --repo "$R" aipotluck-local-client-gui_*
+  ```
+  (The release's `SHA256SUMS` then doesn't list the fixed names; that's cosmetic, the bytes are the
+  same as the versioned files it does list.)
+
+Then re-run the check: **Actions → latest-links → Run workflow**, with the tag. Green means the
+site is serving that release.
+
+### Changing the list
+
+Add, remove or rename a fixed name only together with the site, and in an order that never leaves
+a site link pointing at a file that doesn't exist:
+
+- **Adding a download** (a new target or format):
+  1. here: enable/add it in `build-targets.json` and add its fixed name to
+     `latest-download-names.txt` in the same PR (`test_latest_links.py` enforces that they match);
+  2. publish a release that contains it, and check `latest-links` is green;
+  3. aipotluck.org: add it to `DOWNLOADS`.
+- **Removing a download**:
+  1. aipotluck.org: remove it from `DOWNLOADS` and deploy;
+  2. here: remove it from `build-targets.json` and the list in one PR;
+  3. the next release stops carrying it.
+- **Renaming** is a remove plus an add, in that combined order: add the new name, release, switch
+  the site, then drop the old name.
+
+If aipotluck.org wants a change (say, to stop offering `.app.zip`), it starts with a PR here that
+changes this list and the build together, so the contract changes in one reviewed place.
+
+### First rollout (v0.2.0)
+
+v0.2.0 was published before fixed names existed, so it has none, and the site's `latest` links
+404 until it gets them. Before aipotluck.org switches to these links, either cut the next release
+(it will carry them) or backfill v0.2.0 with the commands under "has no such file" above, then run
+`latest-links` for `v0.2.0` and wait for green.
 
 ## Signing (not set up yet)
 
