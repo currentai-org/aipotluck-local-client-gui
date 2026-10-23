@@ -8,15 +8,26 @@ needs a machine of ours.
 | Channel | When | Where | Who can download |
 |---|---|---|---|
 | **PR builds** | every pull request | the run's **Artifacts** (kept 14 days, best effort: GitHub refuses them while the org's artifact storage is full) and Current AI's S3 artifact bucket | repo members; S3 needs AWS access |
-| **Nightly** | every push to `main` that changes code | the rolling **`nightly` prerelease** | anyone who can see the repo |
+| **Nightly** | daily at 04:00 UTC, when `main` has moved | a **prerelease per nightly**, plus the rolling **`nightly` prerelease** | anyone who can see the repo |
 | **Release** | a `v<version>` tag | a **draft** release, published by a person | after Publish |
 
 ### Nightly
 
-Every push to `main` builds all **enabled** targets. If *every* one builds, the workflow replaces the
-assets of the single `nightly` prerelease and moves its `nightly` tag to that commit
-(`tools/publish-nightly.sh`). If any target fails, the previous nightly stays as it was. A
-half-built nightly would be worse.
+Once a day at 04:00 UTC, `build.yml` builds `main`'s tip for all **enabled** targets. If `main`
+hasn't moved since the last nightly, the run stops at `Plan` and builds nothing. Pushes to `main`
+don't build: every PR already builds every enabled target before it merges. To publish a nightly
+now, run **Actions → build → Run workflow** on `main` with **nightly** ticked (all targets; leave
+`only` empty).
+
+If *every* target builds, `tools/publish-nightly.sh`:
+1. publishes this build as **its own prerelease**, tagged `nightly-<YYYYMMDD>.<sha>` and titled
+   **"GUI v0.2.0-nightly.20261023.abc1234"** (the base version comes first, so you can see which
+   official version a nightly is built on). These are kept, so the Releases page is the history;
+2. updates the rolling **`nightly` prerelease** ("GUI latest nightly (v…)"): replaces its
+   assets and moves its `nightly` tag to this commit.
+
+If any target fails, nothing is published and the previous nightly stays as it was. A half-built
+nightly would be worse.
 
 Each installer appears under two names:
 - **Labelled**, e.g. `aipotluck-local-client-gui_0.1.0-nightly.20261012.2cbd67a_linux-x64.deb`:
@@ -26,14 +37,15 @@ Each installer appears under two names:
   `https://github.com/currentai-org/aipotluck-local-client-gui/releases/download/nightly/aipotluck-local-client-gui_nightly_linux-x64.deb`
   keeps working.
 
-A single `SHA256SUMS` covers both. The nightly is a prerelease and never marked "latest", so it
-doesn't appear as the repo's current release. Docs-only pushes (`docs/**`, `*.md`) don't trigger a
-nightly.
+A single `SHA256SUMS` covers both. Each dated prerelease carries only its labelled names and its
+own `SHA256SUMS`. Nightlies are prereleases and never marked "latest", so they don't appear as the
+repo's current release. Nothing prunes old dated nightlies yet; delete them from Releases by hand if
+the list gets long (`gh release delete nightly-<date>.<sha> --cleanup-tag`).
 
 Notes:
 - While the repo is private, nightly downloads need a GitHub login with access to the repo.
 - Nightlies are unsigned on macOS and Windows, like releases (see Signing).
-- The version inside a nightly's app is the base version (`0.1.0`). The date and commit are in the
+- The version inside a nightly's app is the base version (`0.2.0`). The date and commit are in the
   file name and release title.
 
 ## What gets built
@@ -99,7 +111,7 @@ then flip it on.
 | Workflow | Runs on | Does |
 |---|---|---|
 | `check.yml` | every push to `main`, every PR | `tools/check.sh` (conformance, contract tests on the bundled Python, UI tests and type check, Rust tests) |
-| `build.yml` | PRs; pushes to `main`; `v*.*.*` tags; manual dispatch | builds the enabled targets (or `only`). Then PR: artifacts; `main`: nightly prerelease; tag: draft release |
+| `build.yml` | PRs; daily at 04:00 UTC; `v*.*.*` tags; manual dispatch | builds the enabled targets (or `only`). Then PR: artifacts; schedule (or dispatch with `nightly`): nightly prereleases; tag: draft release titled "GUI vX.Y.Z" |
 
 ## Cutting a release
 
