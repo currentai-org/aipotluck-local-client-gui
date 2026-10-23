@@ -183,6 +183,16 @@
 </header>
 
 <main>
+	{#if app?.ready && app.rosetta}
+		<div class="error" role="alert">
+			<Icon name="error-warning-line" />
+			<span>
+				This is the Intel version of the app, running on an Apple silicon Mac through Rosetta. It works, but
+				download the Apple silicon (<span class="mono">macos-arm64</span>) version instead: it starts faster
+				and uses less power.
+			</span>
+		</div>
+	{/if}
 	{#if screen === 'starting'}
 		<div class="stack">
 			<p class="label">Starting</p>
