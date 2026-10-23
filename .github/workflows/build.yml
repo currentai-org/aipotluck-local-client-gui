@@ -1,12 +1,17 @@
 # Build the GUI's installers for the ENABLED targets in .github/build-targets.json, and publish them.
 #
 #   pull_request              build, upload as workflow artifacts only (catch a broken bundle pre-merge)
-#   push to main              build, then update the rolling `nightly` PRERELEASE: the `nightly` tag is
-#                             moved to this commit and its assets replaced. Stable download URLs:
+#   schedule (04:00 UTC)      the nightly: build main's tip, publish it as its own prerelease
+#                             (nightly-<date>.<sha>, kept as history) and as the rolling `nightly`
+#                             PRERELEASE, whose tag moves to this commit. Stable download URLs:
 #                             https://github.com/<repo>/releases/download/nightly/<file>
+#                             Skipped, building nothing, when main hasn't moved since the last nightly.
 #   push a tag v<version>     build, then create a DRAFT release (a person reviews, then publishes)
 #   workflow_dispatch         build; `only` picks one target -- even a DISABLED one -- so a new
-#                             platform can be tried in CI without enabling it for every push
+#                             platform can be tried in CI without enabling it. `nightly` publishes a
+#                             nightly now, from main, even if main hasn't moved (all targets only).
+#
+# Pushes to main don't build: PR builds already build every enabled target before a merge.
 #
 # Only enabled targets build by default: Linux, Windows and macOS today, each switched on only after
 # it was proven locally with `tools/build.sh --release-target <t>` (flip "enabled" in
@@ -21,10 +26,10 @@
 name: build
 
 on:
+  schedule:
+    - cron: '0 4 * * *'
   push:
-    branches: [main]
     tags: ['v*.*.*']
-    paths-ignore: ['docs/**', '**.md']
   pull_request:
     paths-ignore: ['docs/**', '**.md']
   workflow_dispatch:
@@ -33,6 +38,11 @@ on:
         description: 'Build just this target, even if disabled (e.g. windows-x64); empty = all enabled'
         required: false
         default: ''
+      nightly:
+        description: 'Publish as a nightly now (run from main, all enabled targets), even if main has not moved'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -50,8 +60,8 @@ env:
   ARTIFACT_URI: s3://aipotluck-ci-artifacts-213666289325-us-west-2/ret-14/${{ github.repository }}/${{ github.run_id }}
 
 concurrency:
-  # One nightly publish at a time, and a newer push to main supersedes an older one still running:
-  # the nightly should always be the tip, never an older commit that happened to finish last.
+  # One build per ref at a time. On main (the nightly, scheduled or run by hand) a newer run
+  # supersedes an older one still running: the nightly should always be the tip.
   group: build-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
 
@@ -72,6 +82,9 @@ jobs:
       # installer file names carry: the version for a release, version-nightly.DATE.SHA otherwise.
       - name: Version and channel
         id: version
+        env:
+          NIGHTLY: ${{ inputs.nightly }}
+          ONLY: ${{ inputs.only }}
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             v=$(python3 tools/release_version.py --tag "${GITHUB_REF_NAME}")
@@ -79,10 +92,15 @@ jobs:
           else
             v=$(python3 tools/release_version.py --check)
             label="${v}-nightly.$(date -u +%Y%m%d).${GITHUB_SHA::7}"
-            if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+            channel=none
+            if [ "${GITHUB_EVENT_NAME}" = "schedule" ]; then
+              # A quiet day builds nothing: the newest nightly is already this commit.
+              last=$(git ls-remote origin 'refs/tags/nightly' 'refs/tags/nightly^{}' | tail -1 | cut -f1)
+              if [ "$last" = "$GITHUB_SHA" ]; then channel=skip; else channel=nightly; fi
+            elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ "${NIGHTLY}" = "true" ]; then
+              [ "${GITHUB_REF}" = "refs/heads/main" ] || { echo "::error::a nightly runs from main, not ${GITHUB_REF}"; exit 1; }
+              [ -z "${ONLY}" ] || { echo "::error::a nightly builds every enabled target; leave 'only' empty"; exit 1; }
               channel=nightly
-            else
-              channel=none
             fi
           fi
           {
@@ -104,6 +122,7 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     needs: plan
+    if: needs.plan.outputs.channel != 'skip'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
@@ -225,9 +244,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # Every push to main: replace the assets of the rolling `nightly` prerelease and move its tag to
-  # this commit. Runs only if EVERY enabled target built -- a half-built nightly is worse than
-  # yesterday's whole one, which stays in place when anything fails.
+  # The nightly: publish this build as its own dated prerelease, then replace the assets of the
+  # rolling `nightly` prerelease and move its tag to this commit (tools/publish-nightly.sh). Runs
+  # only if EVERY enabled target built -- a half-built nightly is worse than yesterday's whole one,
+  # which stays in place when anything fails.
   nightly:
     name: Publish nightly
     needs: [plan, build]
@@ -304,7 +324,7 @@ jobs:
             # --generate-notes: GitHub lists the PRs merged since the previous release, under
             # the note below (tools/release.sh makes the tag).
             gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
-              --title "aipotluck-local-client-gui $VERSION" --generate-notes \
+              --title "GUI v$VERSION" --generate-notes \
               --notes-file <(printf '%s\n' \
                 "**Which macOS download?** Apple silicon (M1 and later): \`_macos-arm64.dmg\`. Intel Macs only: \`_macos-x64.dmg\`. The Intel build runs on Apple silicon only under Rosetta, and much slower." \
                 "" \

@@ -35,9 +35,8 @@ budget from step 0 accordingly.
 Windows 10 PC first). At the same assumptions as above, ~12 min at Windows' $0.010/min, it adds
 about **$0.12** per build, so each PR build and push to `main` costs about **$1.75**: roughly $105
 a month at 60 pushes and $263 at 150. Check the per-minute rate against GitHub's current pricing;
-a cold Windows Rust build may also run longer than 12 minutes until the cache is warm. A nightly on *every* push is now the expensive part. Options:
-- move macOS builds to the Mac mini;
-- or build nightlies on a schedule (once a day) instead of per push. That's a one-line change.
+a cold Windows Rust build may also run longer than 12 minutes until the cache is warm. A nightly on *every* push was the expensive part; nightlies now build once a day (04:00 UTC),
+and only when `main` has moved (docs/RELEASING.md).
 
 ## 0. Before you start (5 min)
 
@@ -94,9 +93,10 @@ a cold Windows Rust build may also run longer than 12 minutes until the cache is
       cover tags, so nothing here blocks it. Don't add a tag ruleset that covers `nightly`.
 - [ ] Merge the PR with **"Create a merge commit"** (CLAUDE.md asks for `--no-ff`).
 
-## 5. Watch the first nightly (~20 min after the merge)
+## 5. Watch the first nightly (the next 04:00 UTC run, or start one by hand)
 
-The merge is a push to `main`, so `build` runs again, with channel `nightly`:
+Nightlies are scheduled (04:00 UTC). To see one now: Actions → build → Run workflow on `main`
+with **nightly** ticked. Either way `build` runs with channel `nightly`:
 
 - [ ] `Publish nightly` runs after both Linux builds pass.
 - [ ] **Releases** now shows **"Nightly build (0.1.0-nightly.YYYYMMDD.<sha>)"**, marked
