@@ -310,7 +310,7 @@ This follows `upstream-conformance-harness` and the Android repo's working versi
    `chore/upstream-bump-<sha>` with the bumped submodule and refreshed baseline. **It is not pushed**
    (push requires your approval, as in upstream's CLAUDE.md).
 6. **Schedule:** a scheduled script job runs daily. It is silent when there's nothing to
-   say and delivers the report otherwise. It always exits 0 so the report itself is the
+   say and delivers the report to the maintainer otherwise. It always exits 0 so the report itself is the
    signal. The same script is reusable later as a GitHub Actions `schedule:` workflow, since the
    org's CI control plane is GitHub Actions.
 7. **Prove it can go red** before trusting it: inject a synthetic new subcommand, a changed flag

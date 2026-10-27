@@ -67,8 +67,8 @@ much slower; the app shows a banner saying so. CI checks each `.app` (`tools/che
 holds only its own architecture, and the release notes say which download to pick.
 
 Windows ships the NSIS installer only. The MSI (`nsis,msi`) has never been built: WiX's `light.exe`
-needs the Windows Installer service, which the Linux dev environment used to prove the Windows build
-can't reach. Try it with one `only: windows-x64` dispatch before adding it, since a failing MSI
+needs the Windows Installer service, and an earlier test showed the Windows build couldn't reach
+it. Try it with one `only: windows-x64` dispatch before adding it, since a failing MSI
 step would fail every nightly.
 
 There are no CUDA or Metal builds of the GUI. The GUI contains no GPU code. The bundled CLI
