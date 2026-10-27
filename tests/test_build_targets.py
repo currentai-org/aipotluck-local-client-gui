@@ -112,7 +112,7 @@ def test_only_targets_proven_on_a_real_machine_are_enabled():
 
 def test_windows_ships_the_nsis_installer_only():
     """The MSI is left out until it has been built once: WiX's light.exe needs the Windows
-    Installer service, which the remote session used to prove the Windows build couldn't reach, so
+    Installer service, which the Linux dev environment used to prove the Windows build can't reach, so
     no MSI has ever been produced. The NSIS installer is the one tested end to end. A failing MSI
     step would fail the Windows job and, with it, every nightly (they publish only when all
     enabled targets build). To add it: one `only: windows-x64` dispatch with "nsis,msi" first."""

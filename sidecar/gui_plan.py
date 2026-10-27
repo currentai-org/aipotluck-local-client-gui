@@ -51,8 +51,8 @@ def _content_length(url: str) -> int | None:
                 value = response.headers.get("Content-Length")
             break
         except urllib.error.HTTPError as exc:
-            # GitHub's release redirects occasionally answer 500 for a minute or two (seen
-            # 2026-10-07). One quick retry rides that out; a 4xx won't change, so give up.
+            # GitHub's release redirects occasionally answer 500 for a minute or two.
+            # One quick retry rides that out; a 4xx won't change, so give up.
             if exc.code < 500 or attempt:
                 return None
             time.sleep(1)
