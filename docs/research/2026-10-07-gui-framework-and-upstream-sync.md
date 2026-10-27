@@ -1,6 +1,6 @@
 # aipotluck-local-client GUI — research, framework choice, and upstream-sync plan
 
-Date: 2026-10-07 · Status: proposal, nothing implemented · Author: Hermes (Claude)
+Date: 2026-10-07 · Status: proposal, nothing implemented
 
 ## Decisions (2026-10-07, Andrew)
 - Signing: no Apple Developer ID yet; plan for it later. **Linux (Debian/Ubuntu) is the first tested platform.**
@@ -35,7 +35,7 @@ Date: 2026-10-07 · Status: proposal, nothing implemented · Author: Hermes (Cla
 
 ## 1. What the upstream project actually is (as of `origin/main` 2ac2591, 2026-10-06)
 
-Source: `/opt/data/aitpotluck-local-client` (fetched; local `main` is 20 commits behind origin, untouched).
+Source: a fetched checkout of `aitpotluck-local-client` (local `main` was 20 commits behind origin; untouched).
 
 - **Pure-stdlib Python ≥3.9, `dependencies = []`.** It has no build step and no pip install. Optional
   `pywin32` is needed only for the Windows `--system` service.
@@ -80,7 +80,7 @@ Source: `/opt/data/aitpotluck-local-client` (fetched; local `main` is 20 commits
   on real hardware.** That is the biggest risk for a cross-platform GUI, because the GUI will be the
   first heavy user of those paths.
 
-Sibling precedent: `/opt/data/aipotluck-local-client-android` already solved two of the problems
+Sibling precedent: the Android port (`aipotluck-local-client-android`) already solved two of the problems
 this project faces:
 - conformance against this same upstream: `tools/check_upstream.sh`,
   `tools/conformance/extract_surface.py`, `conformance/{desktop-surface,coverage}.json`;
@@ -88,8 +88,7 @@ this project faces:
 
 Reuse both.
 
-Design guide: `/opt/hermes/currentai/aipotluck.org/` does not exist on this host. The checkout is
-`/opt/data/currentai/aipotluck.org`. There is no `/designguide` route. The equivalents are:
+Design guide: there is no `/designguide` route in the aipotluck.org web app. The equivalents are:
 - the **`/designsystem`** route (`web/src/routes/designsystem`), which browses the Alpha DS;
 - `web/src/lib/alpha-ds/` (tokens → `tokens/generated/tokens.css`, `tokens.json`);
 - the rules in `web/src/lib/chat/design-system.md`: three backgrounds, three border opacities,
@@ -290,7 +289,7 @@ This follows `upstream-conformance-harness` and the Android repo's working versi
    run upstream unchanged.
 
 ### 5.3 Network half (scheduled — `tools/sync_upstream.sh`)
-1. `git fetch` upstream `main` into a cache clone. Never write to `/opt/data/currentai/*`. If
+1. `git fetch` upstream `main` into a cache clone. Never write to the upstream checkouts. If
    `origin/main` == pinned, print nothing and exit 0.
 2. Otherwise, in a scratch worktree, check out the candidate in the submodule and run:
    - surface diff (added / removed / changed) and coverage;
@@ -310,8 +309,8 @@ This follows `upstream-conformance-harness` and the Android repo's working versi
 5. If everything is green and only `implemented` leaves changed, prepare a local branch
    `chore/upstream-bump-<sha>` with the bumped submodule and refreshed baseline. **It is not pushed**
    (push requires your approval, as in upstream's CLAUDE.md).
-6. **Schedule:** a Hermes cron no-agent script job runs daily. It is silent when there's nothing to
-   say and delivers the report to Telegram otherwise. It always exits 0 so the report itself is the
+6. **Schedule:** a scheduled script job runs daily. It is silent when there's nothing to
+   say and delivers the report otherwise. It always exits 0 so the report itself is the
    signal. The same script is reusable later as a GitHub Actions `schedule:` workflow, since the
    org's CI control plane is GitHub Actions.
 7. **Prove it can go red** before trusting it: inject a synthetic new subcommand, a changed flag
@@ -357,18 +356,17 @@ This follows `upstream-conformance-harness` and the Android repo's working versi
 3. **GPU backends on Windows and macOS.** Upstream picks CUDA, Vulkan or CPU, and Metal on macOS.
    The GUI only displays the choice; it must not add its own logic (R5).
 4. **Deep link** needs an aipotluck.org change, filed as a proposal, never pushed by us.
-5. **Repo location and name**: proposed `/opt/data/aipotluck-local-client-gui`, own git repo, no
-   remote yet. Only this research doc exists there now.
-6. **Toolchain on this Pi:** there's no Rust or cargo here. Building Tauri requires installing
-   rustup and the webkit2gtk dev headers, which apt can't install without root. That makes local
-   builds here unlikely, so build in GitHub Actions instead, and confirm before installing anything.
+5. **Repo location and name**: proposed as its own git repo named `aipotluck-local-client-gui`.
+6. **Toolchain:** the dev host had no Rust or cargo. Building Tauri requires rustup and the
+   webkit2gtk dev headers, which apt can't install without root. That made local builds there
+   unlikely, so the plan was to build in GitHub Actions.
 7. **Linux baseline:** build on Ubuntu 22.04 (glibc 2.35) to match the Jetson targets upstream
    supports.
 
 ## 8. Proposed next steps (once you approve)
 1. `git init` the repo; adopt CLAUDE.md; add upstream as a submodule pinned to `2ac2591`.
 2. Port the conformance extractor and coverage manifest, and prove they can go red.
-3. Write `sync_upstream.sh` plus the Hermes cron watchdog. Test both the silent path and the report
+3. Write `sync_upstream.sh` plus the scheduled watchdog. Test both the silent path and the report
    path.
 4. Build the sidecar prototype with no UI yet: bundled python-build-standalone runs upstream's
    install, login and status against a temp layout on Linux.
@@ -377,9 +375,9 @@ This follows `upstream-conformance-harness` and the Android repo's working versi
    test per OS.
 
 ## References
-- Upstream CLI: github.com/currentai-org/aitpotluck-local-client (local: /opt/data/aitpotluck-local-client, `README.md`, `ARCHITECTURE.md`, `CLAUDE.md`, `aipotluck/service/runner.py`, `aipotluck/installer/cli.py`)
-- Android port precedent: /opt/data/aipotluck-local-client-android (`docs/CONFORMANCE.md`, `tools/check_upstream.sh`, `tools/conformance/`, `tools/design/sync-alpha.py`, `docs/guides/upstream-conventions.md`)
-- Design system: /opt/data/currentai/aipotluck.org/web/src/lib/alpha-ds/README.md, web/src/lib/chat/design-system.md, route `/designsystem`
+- Upstream CLI: github.com/currentai-org/aitpotluck-local-client (`README.md`, `ARCHITECTURE.md`, `CLAUDE.md`, `aipotluck/service/runner.py`, `aipotluck/installer/cli.py`)
+- Android port precedent: `aipotluck-local-client-android` (`docs/CONFORMANCE.md`, `tools/check_upstream.sh`, `tools/conformance/`, `tools/design/sync-alpha.py`, `docs/guides/upstream-conventions.md`)
+- Design system: aipotluck.org's `web/src/lib/alpha-ds/README.md`, web/src/lib/chat/design-system.md, route `/designsystem`
 - Tauri sidecars: https://v2.tauri.app/develop/sidecar/
 - Tauri AppImage (size, glibc baseline, no ARM cross-build): https://v2.tauri.app/distribute/appimage/
 - Tauri deep linking: https://v2.tauri.app/plugin/deep-linking/

@@ -43,7 +43,7 @@ local toolchain.
   service only through the Rust allow-list in `src-tauri/src/service.rs`.
 - **Read-only upstreams.** `currentai-org/aitpotluck-local-client` and
   `currentai-org/aipotluck.org` are references. Never commit to, push to, or run a writing git
-  command in their checkouts under `/opt/data/currentai/` or `/opt/data/aitpotluck-local-client`.
+  command in a local checkout of either.
   The submodule here may be fetched and checked out, nothing more.
 - **Do not commit third-party binaries.** The bundled Python and upstream archive are staged into
   `src-tauri/resources/runtime/` (gitignored) by `tools/stage-runtime.sh`. Fonts in
@@ -122,5 +122,5 @@ broken (from `chat/design-system.md`):
 - **Destructive looks exactly like secondary**; only its icon takes Accent 2.
 - **Sharp corners by default; labels left-aligned**; DM Mono uppercase for labels and CTAs.
 
-Re-sync with `tools/design/sync-alpha.py /opt/data/currentai/aipotluck.org`, and record the
+Re-sync with `tools/design/sync-alpha.py <path to a checkout of the aipotluck.org web app>`, and record the
 upstream commit (written to `ui/src/design/SOURCE.json`) in the commit body.

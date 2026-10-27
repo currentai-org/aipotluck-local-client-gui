@@ -61,7 +61,7 @@ failure and not the others'.
 
 ## Daily watchdog
 
-A Hermes cron job runs `tools/upstream_watchdog.sh` once a day:
+A scheduled job (cron or a GitHub Actions `schedule:` workflow) runs `tools/upstream_watchdog.sh` once a day:
 - it prints nothing when in sync, so nothing is delivered;
 - when upstream has moved, it delivers the report plus the next steps;
 - it always exits 0, so a delivered warning is not also a failed job.
