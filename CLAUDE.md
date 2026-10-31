@@ -122,5 +122,5 @@ broken (from `chat/design-system.md`):
 - **Destructive looks exactly like secondary**; only its icon takes Accent 2.
 - **Sharp corners by default; labels left-aligned**; DM Mono uppercase for labels and CTAs.
 
-Re-sync with `tools/design/sync-alpha.py <path to a checkout of the aipotluck.org web app>`, and record the
-upstream commit (written to `ui/src/design/SOURCE.json`) in the commit body.
+Re-sync with `tools/design/sync-alpha.py <path to a checkout of the aipotluck.org web app>`, and
+record the upstream commit (written to `ui/src/design/SOURCE.json`) in the commit body.
