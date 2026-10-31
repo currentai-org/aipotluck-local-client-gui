@@ -1,7 +1,6 @@
 {
   "repo": "currentai-org/aipotluck.org",
   "commit": "7ca9cac4a45521329b480eae2d54af81c7459f2e",
-  "subject": "Merge pull request #2468 from currentai-org/venusjustin/cur-3057-on-develop-the-violence-re-check-fails-every-call-since",
   "files": {
     "tokens.css": "7322a19d6a914c3dfbe1a0971fd3ce97d251f48e3ba00ad182f236000353f238",
     "base.css": "877c80c4e4a29bf25052a198811112163c5af852e1c305878edb536e4ea9b122",
