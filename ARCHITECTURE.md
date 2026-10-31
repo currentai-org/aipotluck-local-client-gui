@@ -27,6 +27,41 @@
 **The GUI never does anything upstream's code doesn't already do.** It chooses *which* upstream
 command to run, with which flags, and shows the result.
 
+## Why Tauri v2 + Svelte
+
+Seven requirements decided this, and they still describe the shell:
+
+- one download, one native installer per OS, nothing else to install;
+- pairing with zero keypresses;
+- Linux, macOS and Windows, x64 and arm64 where llama.cpp has assets;
+- a small runtime with no bundled browser engine;
+- upstream's own code and pins running unmodified, not a port;
+- the Alpha design system consumed as CSS rather than hand-translated;
+- a UI testable headless on Linux CI.
+
+What was chosen against what:
+
+- **Tauri v2 + Svelte.** A 3-10 MB Rust shell over the OS's own webview (WebView2, WKWebView,
+  WebKitGTK), with python-build-standalone as a sidecar: about 30-45 MB per install, about 100 MB
+  as a Linux AppImage. The UI is Svelte, the same stack as aipotluck.org, so it imports the
+  generated `tokens.css` verbatim instead of re-deriving it. Deep links, tray, single-instance,
+  autostart and a signed updater all have official plugins.
+- **pywebview, the runner-up.** One language with upstream, and it could import its CLI in-process.
+  It loses on install friction where it matters most: on Linux it needs system PyGObject packages a
+  standalone Python cannot use, or about 100 MB of QtWebEngine, and a single-file PyInstaller build
+  is a routine antivirus false positive on Windows. Deep links, tray and auto-update are also
+  DIY per OS.
+- **Rejected.** Electron, at 90-150 MB of Chromium per install. Wails, which has no first-party
+  updater or deep links and a smaller ecosystem. Tkinter, which cannot render the design system.
+  Qt/Flutter/Slint, which cannot reuse the Alpha DS CSS, so the tokens would need the same hand
+  translation the Android port needed, at 60-150 MB and LGPL obligations. A localhost web page,
+  which still needs an installer, has no app identity, and would need a local write endpoint for
+  `login` that upstream deliberately does not have.
+
+Three costs come with it, all still true: the Linux AppImage must be built on the oldest supported
+base (Ubuntu 22.04) for glibc compatibility; arm64 AppImages cannot be cross-built, so that target
+needs an arm64 runner; and there are three webview engines to test rather than one.
+
 ## The bundled runtime
 
 `tools/stage-runtime.sh` stages four things into `src-tauri/resources/runtime/`, and Tauri ships
@@ -145,8 +180,8 @@ The UI says plainly that the server only runs while the window is open.
 - Source-build hosts (no prebuilt llama.cpp for the machine) may need apt packages. Upstream only
   installs them with consent through an interactive prompt the GUI can't answer, so the log shows
   upstream's instructions instead.
-- macOS builds in CI (arm64 and x64, unsigned: ad-hoc signature only, no Developer ID or
-  notarization yet). Windows isn't built: upstream's newt checksum for it is still a placeholder,
-  so pairing there fails until upstream fills it in. Signing comes later.
+- Every release target builds in CI (Linux x64/arm64, macOS arm64/x64, Windows x64), but the builds
+  are unsigned: macOS gets an ad-hoc signature and Windows none. Signing and notarization need the
+  secrets listed in docs/RELEASING.md.
 - Release `.deb`/AppImage builds must be made on Ubuntu 22.04 for glibc compatibility
   (docs/BUILDING.md).

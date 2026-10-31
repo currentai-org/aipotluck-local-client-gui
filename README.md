@@ -55,7 +55,7 @@ ui/                                Svelte UI; ui/src/design/ = Alpha DS synced f
 conformance/                       upstream interface baseline + coverage manifest
 tests/                             contract tests vs upstream's real code (run on the bundled Python)
 tools/                             build, check, stage-runtime, sync_upstream, watchdog, design sync
-docs/                              BUILDING, RELEASING, CONFORMANCE, DESIGN-SYSTEM, research/
+docs/                              BUILDING, RELEASING, CONFORMANCE, DESIGN-SYSTEM, ENABLING-CI
 .github/                           CI: check.yml (the gate), build.yml (installers + draft release), build-targets.json
 ```
 
