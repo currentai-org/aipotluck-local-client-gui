@@ -7,7 +7,7 @@ needs a machine of ours.
 
 | Channel | When | Where | Who can download |
 |---|---|---|---|
-| **PR builds** | every pull request | the run's **Artifacts** (kept 14 days, best effort: GitHub refuses them while the org's artifact storage is full) and Current AI's S3 artifact bucket | repo members; S3 needs AWS access |
+| **PR builds** | every pull request | the run's **Artifacts** (kept 14 days, best effort: GitHub refuses them while the org's artifact storage is full) | repo members |
 | **Nightly** | daily at 04:00 UTC, when `main` has moved | a **prerelease per nightly**, plus the rolling **`nightly` prerelease** | anyone who can see the repo |
 | **Release** | a `v<version>` tag | a **draft** release, published by a person | after Publish |
 
@@ -66,10 +66,8 @@ The two macOS builds are for different Macs: `macos-arm64` for Apple silicon (M1
 much slower; the app shows a banner saying so. CI checks each `.app` (`tools/check-macos-arch.sh`)
 holds only its own architecture, and the release notes say which download to pick.
 
-Windows ships the NSIS installer only. The MSI (`nsis,msi`) has never been built: WiX's `light.exe`
-needs the Windows Installer service, which the remote session used to prove the Windows build
-couldn't reach. Try it with one `only: windows-x64` dispatch before adding it, since a failing MSI
-step would fail every nightly.
+Windows ships the NSIS installer only. The MSI (`nsis,msi`) has never been built. Try it with one
+`only: windows-x64` dispatch before adding it, since a failing MSI step would fail every nightly.
 
 There are no CUDA or Metal builds of the GUI. The GUI contains no GPU code. The bundled CLI
 downloads the right llama.cpp build (CPU, CUDA, Vulkan or ROCm; Metal is built into the macOS
@@ -86,7 +84,7 @@ build's glibc floor.
 
 ## Turning on Windows and macOS (local first)
 
-A disabled target costs nothing: it is never built on PRs, nightlies or tags. Prove it locally,
+A disabled target is never built on PRs, nightlies or tags. Prove it locally,
 then flip it on.
 
 1. **Build it on a real machine of that OS**, the same way CI will:

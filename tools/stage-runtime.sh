@@ -2,7 +2,7 @@
 # Stage the bundled runtime the app ships with, into src-tauri/resources/runtime/:
 #
 #   python-<tag>-<target>.tar.gz   python-build-standalone, pinned + sha256-verified (runtime/python_version.json)
-#   upstream-<sha>.tar.gz          `git archive` of the pinned upstream/aitpotluck-local-client submodule commit
+#   upstream-<sha>.tar.gz          `git archive` of the pinned upstream/aipotluck-local-client submodule commit
 #   gui_probe.py                   our read-only state probe (sidecar/gui_probe.py)
 #   gui_plan.py                    our read-only install plan (sidecar/gui_plan.py)
 #   gui_server.py                  which AI Potluck server pairing uses, per upstream (sidecar/gui_server.py)
@@ -15,7 +15,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-UPSTREAM="$ROOT/upstream/aitpotluck-local-client"
+UPSTREAM="$ROOT/upstream/aipotluck-local-client"
 OUT="$ROOT/src-tauri/resources/runtime"
 CACHE="$ROOT/build/cache"
 PIN="$ROOT/runtime/python_version.json"
@@ -57,7 +57,7 @@ for k in sys.argv[2].split("."): d=d[k]
 print(d)' "$1" "$2" | tr -d '\r'; }
 
 [ -f "$UPSTREAM/aipotluck/installer/install.py" ] || {
-  echo "upstream submodule missing -- run: git submodule update --init upstream/aitpotluck-local-client" >&2; exit 2; }
+  echo "upstream submodule missing -- run: git submodule update --init upstream/aipotluck-local-client" >&2; exit 2; }
 
 mkdir -p "$CACHE" "$OUT"
 rm -f "$OUT"/*.tar.gz "$OUT"/manifest.json "$OUT"/gui_*.py

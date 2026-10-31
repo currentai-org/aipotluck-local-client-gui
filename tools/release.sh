@@ -17,7 +17,7 @@
 #   - the working tree is clean and HEAD is exactly origin/main;
 #   - tauri.conf.json, Cargo.toml and ui/package.json all say <version> (tools/release_version.py);
 #   - the tag doesn't exist yet, locally or on origin;
-#   - the pinned CLI commit (the upstream/aitpotluck-local-client submodule) is on the CLI's main,
+#   - the pinned CLI commit (the upstream/aipotluck-local-client submodule) is on the CLI's main,
 #     so a release never ships a CLI that only exists on a feature branch.
 #
 # Env: AIPOTLUCK_CLI_REMOTE overrides where the CLI's main is fetched from (tests use a local repo).
@@ -86,7 +86,7 @@ case "$CMD" in
     if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then die "$TAG already exists locally"; fi
     if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then die "$TAG already exists on origin"; fi
 
-    sub=upstream/aitpotluck-local-client
+    sub=upstream/aipotluck-local-client
     pin="$(git ls-tree HEAD "$sub" | awk '{print $3}')"
     [ -n "$pin" ] || die "no CLI pin found at $sub"
     cli_remote="${AIPOTLUCK_CLI_REMOTE:-$(git config -f .gitmodules "submodule.$sub.url")}"

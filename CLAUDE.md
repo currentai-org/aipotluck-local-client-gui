@@ -4,19 +4,19 @@ Guidance for coding agents and contributors working in this repository. `AGENTS.
 this file, so Claude Code and Codex read the same text and cannot drift apart. Edit here, never
 there.
 
-Conventions are adopted from the upstream CLI (`currentai-org/aitpotluck-local-client`, its
+Conventions are adopted from the upstream CLI (`currentai-org/aipotluck-local-client`, its
 `CLAUDE.md`) and its sibling port `aipotluck-local-client-android`. Where they differ, the CLI wins:
 this app *is* the CLI with a window on it.
 
 ## Project overview
 
-A cross-platform desktop GUI for `aitpotluck-local-client`. Two goals, in priority order:
+A cross-platform desktop GUI for `aipotluck-local-client`. Two goals, in priority order:
 1. **Minimal user friction.** Download, install, one click to set up, one click to pair. No
    terminal, no prerequisites, no keypresses beyond an optional paste.
 2. **Behave identically to the CLI.** A device set up from this app and one set up from the CLI
    must be indistinguishable on disk, to the OS, and to aipotluck.org.
 
-Linux (Debian/Ubuntu) is the first tested platform; macOS and Windows follow.
+Linux (Debian/Ubuntu), macOS and Windows are all built and released from CI today.
 
 Read `ARCHITECTURE.md` before structural changes, `docs/CONFORMANCE.md` before touching anything
 that talks to upstream, and `docs/DESIGN-SYSTEM.md` before UI work. `docs/BUILDING.md` covers the
@@ -31,7 +31,7 @@ local toolchain.
   newt, verifying checksums, writing `runtime.json`, and registering the OS service are all
   upstream's job. If the GUI needs something upstream can't do, the fix goes upstream (as a
   proposal; see below), not here.
-- **The upstream pin is the submodule commit**, `upstream/aitpotluck-local-client`. llama.cpp and
+- **The upstream pin is the submodule commit**, `upstream/aipotluck-local-client`. llama.cpp and
   newt versions come from *that* commit's `llama_version.json`/`newt_version.json`, so they move in
   lockstep with the CLI by construction. Bump the pin only through `tools/sync_upstream.sh
   --prepare-bump` (or by hand with the same checks), never as a side effect of another change.
@@ -41,9 +41,9 @@ local toolchain.
   successful pair.
 - **No inbound-network requirement, and no new localhost write API.** The webview reaches the
   service only through the Rust allow-list in `src-tauri/src/service.rs`.
-- **Read-only upstreams.** `currentai-org/aitpotluck-local-client` and
+- **Read-only upstreams.** `currentai-org/aipotluck-local-client` and
   `currentai-org/aipotluck.org` are references. Never commit to, push to, or run a writing git
-  command in their checkouts under `/opt/data/currentai/` or `/opt/data/aitpotluck-local-client`.
+  command in a local checkout of either.
   The submodule here may be fetched and checked out, nothing more.
 - **Do not commit third-party binaries.** The bundled Python and upstream archive are staged into
   `src-tauri/resources/runtime/` (gitignored) by `tools/stage-runtime.sh`. Fonts in
@@ -99,11 +99,12 @@ Gate: `tools/check.sh` runs:
 - the conformance check (no drift, every upstream item classified).
 
 GitHub Actions runs the same gate (`.github/workflows/check.yml`) on every PR and push to `main`.
-`build.yml` builds installers for every *enabled* target in `.github/build-targets.json` (Linux and
-macOS today) on every PR, publishes the rolling `nightly` prerelease on every push to `main`, and makes a
-draft release on a `v*.*.*` tag (docs/RELEASING.md). A PR whose installers don't build isn't
-mergeable, the same as a red `check.sh`. A disabled target (Windows today) is enabled only after
-`tools/build.sh --release-target <t>` has produced a working installer on a real machine of that OS.
+`build.yml` builds installers for every enabled target in `.github/build-targets.json` (all five
+today) on every PR, publishes the nightly prereleases on a daily schedule, and makes a draft release
+on a `v*.*.*` tag (docs/RELEASING.md, docs/ENABLING-CI.md). A PR whose installers don't build isn't
+mergeable, the same as a red `check.sh`. A target is enabled only after
+`tools/build.sh --release-target <t>` has produced a working installer on a real machine of that OS;
+`tests/test_build_targets.py` enforces that.
 
 ## Runtime parameters are upstream's
 
@@ -122,5 +123,5 @@ broken (from `chat/design-system.md`):
 - **Destructive looks exactly like secondary**; only its icon takes Accent 2.
 - **Sharp corners by default; labels left-aligned**; DM Mono uppercase for labels and CTAs.
 
-Re-sync with `tools/design/sync-alpha.py /opt/data/currentai/aipotluck.org`, and record the
-upstream commit (written to `ui/src/design/SOURCE.json`) in the commit body.
+Re-sync with `tools/design/sync-alpha.py <path to a checkout of the aipotluck.org web app>`, and
+record the upstream commit (written to `ui/src/design/SOURCE.json`) in the commit body.

@@ -1,4 +1,4 @@
-# Staying in step with aitpotluck-local-client
+# Staying in step with aipotluck-local-client
 
 This app runs the upstream CLI's own code, so "staying in sync" isn't porting changes. It means
 noticing when upstream moves, proving the GUI still works against the new commit, then bumping the
@@ -61,7 +61,7 @@ failure and not the others'.
 
 ## Daily watchdog
 
-A Hermes cron job runs `tools/upstream_watchdog.sh` once a day:
+A daily cron job runs `tools/upstream_watchdog.sh`:
 - it prints nothing when in sync, so nothing is delivered;
 - when upstream has moved, it delivers the report plus the next steps;
 - it always exits 0, so a delivered warning is not also a failed job.

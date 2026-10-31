@@ -17,7 +17,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 export PATH="$HOME/.cargo/bin:$HOME/.npm-global/bin:$PATH"
 
-git submodule update --init upstream/aitpotluck-local-client
+git submodule update --init upstream/aipotluck-local-client
 
 # The Tauri CLI: `cargo tauri` (cargo install tauri-cli), or the npm build of the same CLI, which is
 # what CI installs and what's quickest to get on Windows (no compile).

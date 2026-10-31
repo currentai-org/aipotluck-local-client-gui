@@ -49,10 +49,10 @@
   "cli": {
     "files": {
       "cli.py": {
-        "sha256": "c11cc71a7be325ed8bb429467e16b91ca5230379a7dc84d72bbc0dcc6b2a8e54"
+        "sha256": "7bcd247e683bd06cea123c5bfdfab463afb548965ab4e59c28299acb6cbfb15c"
       },
       "install.py": {
-        "sha256": "c5ce832352e67117556f1f0811789cfd31f1299c8bc32336135d9eead744a043"
+        "sha256": "85dd0ee655dc2f0b194d3b864290776e803e769e057f153e4c0d166a09e47a45"
       }
     },
     "install_choice_sets": {
@@ -731,10 +731,10 @@
     "default_port": 8069,
     "files": {
       "diagnostics.py": {
-        "sha256": "22a0ea1c5d95a6e22605fe4e69c0f79fec013b09026a679b3a00accf7a998ecd"
+        "sha256": "6c66b185c80d7510dfd0cc82a1b4ff303f237ee5bcb9828928a5012441068b7f"
       },
       "runner.py": {
-        "sha256": "20e7c947921473562476407d9d58bed40c5cb23b9a84d0b3c27dc709c645f5c3"
+        "sha256": "b46874be05e49ad7c8f26625b72dfc51cdd67a433da9832aac81d431d5efbfb5"
       }
     },
     "fingerprint_version": 1,
@@ -803,9 +803,9 @@
       "tunnel"
     ]
   },
-  "source_commit": "21067d73e05d75d29e08bf3cec3cecfa32dac1a8",
-  "source_repo": "aitpotluck-local-client",
-  "source_subject": "feat(installer): put the CLI on the user's PATH on Linux and macOS too",
+  "source_commit": "af926ae01ee7ca19b327062b48859bb7be36de90",
+  "source_repo": "upstream-af926ae01ee7ca19b327062b48859bb7be36de90",
+  "source_subject": "Merge pull request #10 from currentai-org/andrewtergis/cur-4770-scrub-local-client-repos-of-non-public-information",
   "tunnel": {
     "argv": [
       {
@@ -850,7 +850,7 @@
     "error_prefix": "ERROR:",
     "files": {
       "newt_supervisor.py": {
-        "sha256": "4fcd7d796825f1f907583c480065a496c7359fa132c8abc12b2f79e4e880f58f"
+        "sha256": "cccfc4cc710f1a73144e53478b674662b629d037a4c7ea0f456502026224258c"
       }
     },
     "flags": [

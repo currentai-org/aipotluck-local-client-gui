@@ -1,6 +1,7 @@
 # Building locally (Linux: Debian / Ubuntu; macOS)
 
-Local builds are the primary path. CI (GitHub Actions) comes later and will run these same steps.
+Local builds are the primary path, and CI runs these same steps on GitHub Actions
+(`tools/build.sh` per target, inside `.github/workflows/build.yml`).
 
 ## 1. System packages (root, once per machine/image)
 
@@ -15,7 +16,7 @@ sudo apt-get update && sudo apt-get install -y \
 - Lines 1–3: compiler plus Tauri v2's Linux build dependencies (WebKitGTK 4.1, GTK3, tray, input).
 - Line 4: headless display + WebDriver for running and e2e-testing the GUI without a monitor.
 
-> **Container note (dev host):** on the Hermes dev container these packages are installed into
+> **Container note (dev container):** in a container these packages are installed into
 > the container image, **not** a persistent volume. If the container is rebuilt and Rust/Tauri
 > builds start failing (e.g. `pkg-config` can't find `webkit2gtk-4.1`), re-run the command above
 > as root. Rust itself (`~/.cargo`, `~/.rustup`) lives in the persistent home and should survive.
@@ -71,7 +72,7 @@ Notes:
 
 ## glibc / release builds
 
-A binary links against the build host's glibc. Measured: a build made on the Debian 13 dev host
+A binary links against the build host's glibc. A build made on the Debian 13 dev host
 requires **GLIBC_2.39**, so it runs on Debian 13 and Ubuntu 24.04+ but **not** Ubuntu 22.04 /
 Debian 12. Those dev builds are fine for testing. Release `.deb`/AppImage artifacts should be built
 on the oldest supported base — Ubuntu 22.04 (glibc 2.35, matching upstream's Jetson/JetPack 6

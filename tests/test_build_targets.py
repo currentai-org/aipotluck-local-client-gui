@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-UPSTREAM = ROOT / "upstream" / "aitpotluck-local-client"
+UPSTREAM = ROOT / "upstream" / "aipotluck-local-client"
 TARGETS = json.loads((ROOT / ".github" / "build-targets.json").read_text())["targets"]
 TOOL = ROOT / "tools" / "release_version.py"
 
@@ -111,11 +111,9 @@ def test_only_targets_proven_on_a_real_machine_are_enabled():
 
 
 def test_windows_ships_the_nsis_installer_only():
-    """The MSI is left out until it has been built once: WiX's light.exe needs the Windows
-    Installer service, which the remote session used to prove the Windows build couldn't reach, so
-    no MSI has ever been produced. The NSIS installer is the one tested end to end. A failing MSI
-    step would fail the Windows job and, with it, every nightly (they publish only when all
-    enabled targets build). To add it: one `only: windows-x64` dispatch with "nsis,msi" first."""
+    """The MSI is left out until it has been built once. The NSIS installer is the one tested end
+    to end. A failing MSI step would fail the Windows job and, with it, every nightly (they publish
+    only when all enabled targets build). To add it: one `only: windows-x64` dispatch with "nsis,msi" first."""
     win = next(t for t in TARGETS if t["target"] == "windows-x64")
     assert win["bundles"] == "nsis"
 

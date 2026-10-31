@@ -120,7 +120,7 @@
     },
     "cli.subcommands.login.flags.--server-url": {
       "status": "todo",
-      "note": "One-click pairing (login with no credential flags, optionally --server-url) is adopted on andrewtergis/cur-4110-one-click-pairing-flow; this branch still pairs with --credentials-file only."
+      "note": "One-click pairing (login with no credential flags, optionally --server-url) is adopted on the one-click pairing branch; this branch still pairs with --credentials-file only."
     },
     "cli.subcommands.login.flags.--credentials-file": {
       "status": "implemented",

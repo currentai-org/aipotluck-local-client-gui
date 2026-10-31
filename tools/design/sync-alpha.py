@@ -137,7 +137,6 @@ def main() -> int:
     source = {
         "repo": "currentai-org/aipotluck.org",
         "commit": _git(args.web_repo, "rev-parse", "HEAD"),
-        "subject": _git(args.web_repo, "log", "-1", "--format=%s"),
         "files": {
             "tokens.css": _sha(tokens),
             "base.css": _sha(base),
