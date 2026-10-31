@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>report</title>
+<style>
+  :root { --ink:#1a1a1a; --muted:#5a6570; --accent:#0f6b5c; --line:#d8dee4; --chip:#eef3f1; }
+  * { box-sizing: border-box; }
+  body { font: 16px/1.65 Georgia, 'Times New Roman', serif; color: var(--ink);
+         max-width: 900px; margin: 0 auto; padding: 48px 28px 80px; background:#fff; }
+  h1,h2,h3,h4 { font-family: 'Helvetica Neue', Arial, sans-serif; line-height:1.25; color:#10241f; }
+  h1 { font-size: 1.9rem; border-bottom: 3px solid var(--accent); padding-bottom: .4rem; }
+  h2 { font-size: 1.35rem; margin-top: 2.2rem; border-bottom: 1px solid var(--line); padding-bottom: .3rem; }
+  h3 { font-size: 1.08rem; margin-top: 1.6rem; }
+  em { color: var(--muted); }
+  table { border-collapse: collapse; width: 100%; margin: 1.2rem 0;
+           font-family:'Helvetica Neue',Arial,sans-serif; font-size: .82rem; }
+  th, td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: var(--chip); font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  .cite { font-family:'Helvetica Neue',Arial,sans-serif; font-size:.68em;
+           color: var(--accent); font-weight:600; }
+  .unverified { font-family:'Helvetica Neue',Arial,sans-serif; font-size:.72em; color:#a15c00;
+                 font-weight:600; border:1px solid #e6c48a; border-radius:3px;
+                 padding:0 4px; background:#fdf6ea; }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+  blockquote { border-left: 3px solid var(--accent); margin-left: 0;
+                padding-left: 1rem; color: var(--muted); }
+  li { margin: .25rem 0; }
+  strong { color: #0d1f1b; }
+  @media print { body { padding: 0; font-size: 12.5px; }
+                  h2 { page-break-after: avoid; } table { page-break-inside: auto; } }
+</style>
+</head>
+<body>
+<h1>Building and testing the local-client GUI on six platforms: options and scenarios</h1>
+<p>Prepared 2026-10-09 for the <code>aipotluck-local-client-gui</code> project. Covers Linux CPU, Linux + CUDA,
+macOS CPU, macOS + Metal, Windows CPU and Windows + CUDA. All prices are list prices in USD, read on
+the date above. Every derived dollar figure was computed by script from the cited unit prices
+(<code>costs.json</code> beside this report).</p>
+<h2>TL;DR</h2>
+<ol>
+<li><strong>Our existing CI infrastructure covers only one of the six legs as it stands.</strong>
+   - The aipotluck.org <code>ci-runners/</code> stack provisions ephemeral EC2 runners for GitHub Actions.<sup class="cite">[1]</sup>
+   - It builds a single Ubuntu 24.04 image in two CPU-only sizes.<sup class="cite">[2]</sup>
+   - So today it covers <strong>Linux CPU</strong> only.
+   - The construct it is built on also supports Windows and GPU providers, so <strong>Linux + CUDA and
+     Windows (CPU and CUDA) are an extension of a stack we already run, not a new system</strong>.<sup class="cite">[12]</sup></li>
+<li><strong>macOS is the one platform no AWS-native path covers cheaply.</strong>
+   - EC2 Macs are bare-metal Dedicated Hosts with a 24-hour minimum allocation.<sup class="cite">[14]</sup>
+   - Our CDK construct has no macOS provider.<sup class="cite">[12]</sup>
+   - The cheapest macOS legs are therefore GitHub's own hosted Mac runners, billed per minute.<sup class="cite">[11]</sup></li>
+<li><strong>"macOS + Metal" may be testable on GitHub's standard hosted Macs, but this is unproven for our
+   workload.</strong>
+   - Those VMs expose an "Apple Paravirtual device" to Metal.<sup class="cite">[23]</sup>
+   - llama.cpp's own CI builds and runs a Metal-enabled test with <code>-ngl 99</code> on <code>macos-latest</code>.<sup class="cite">[18]</sup>
+   - The paravirtual GPU reports an older Metal feature set, so llama.cpp picks slower kernels than
+     on bare metal.<sup class="cite">[25]</sup>
+   - It is a functional test, not a performance test. Bare-metal Metal benchmarking needs real Apple
+     hardware.<sup class="cite">[19]</sup></li>
+<li><strong>CUDA testing needs an NVIDIA GPU on the runner, and that is where costs diverge.</strong>
+   - GitHub's T4 GPU runners cost $0.052/min on Linux and $0.102/min on Windows, and require the
+     Team plan.<sup class="cite">[11]</sup>
+   - The same T4 class on EC2 (<code>g4dn.xlarge</code>) is $0.526/h on Linux and $0.71/h on Windows,
+     on-demand in us-west-2.<sup class="cite">[15]</sup>
+   - That makes AWS about <strong>5.9×</strong> cheaper than GitHub on Linux GPU and <strong>8.6×</strong> cheaper on Windows
+     GPU.</li>
+<li><strong>Recommended (updated 2026-10-09): scenario E, the AWS stack plus the incoming Mac mini M5.</strong>
+   - The existing AWS stack, extended, runs Linux CPU, Linux CUDA, Windows CPU and Windows CUDA.
+   - A Mac mini M5 that is being bought anyway runs the two macOS legs as a self-hosted runner.
+   - It is the only option here that gives <strong>bare-metal Metal</strong> (real performance numbers) at no
+     recurring cost.
+   - Cloud spend drops to about <strong>$19/month</strong> at one nightly run of all six legs (~20 min each).
+     That compares with $93/month for scenario B (hosted Macs) and $211/month for an
+     all-GitHub-hosted setup.
+   - The cost moves into maintenance: one physical machine to keep patched, powered and online.
+   - Scenario B's hosted Macs stay the fallback whenever the mini is offline.</li>
+<li><strong>Two blockers exist regardless of where tests run.</strong>
+   - Upstream's newt checksums for macOS and Windows are still placeholders.<sup class="cite">[8]</sup>
+   - Upstream auto-detection never selects a GPU backend on Windows: Windows CUDA is not wired into
+     the installer yet.<sup class="cite">[7]</sup>
+   - Until both are fixed upstream, a Windows CUDA or macOS pairing test has nothing correct to test.</li>
+</ol>
+<h2>The constraints that shape every option</h2>
+<p><strong>C1. Each leg needs real hardware of its kind at test time, but not at build time.</strong>
+- The GUI does not compile llama.cpp. It downloads upstream's pinned prebuilt assets, one per
+  platform and backend:
+  - <code>linux-x64-cuda</code> uses CUDA 12.8;
+  - <code>macos-arm64-cpu</code> has Metal built in;
+  - there is a Windows CPU zip.<sup class="cite">[6]</sup>
+- <em>Building</em> the six installers is therefore cheap and runs on any runner of the right OS. Tauri's
+  own reference workflow builds macOS, Linux and Windows bundles on standard hosted runners.<sup class="cite">[37]</sup>
+- <em>Testing</em> that the inference server actually uses the GPU needs that GPU present.
+- So the matrix has two cost profiles, and every option should be judged on the test legs.</p>
+<p><strong>C2. The GPU APIs differ by OS, and so does the hardware a cloud guest can reach.</strong>
+- <strong>CUDA</strong> needs an NVIDIA device inside the guest: EC2 G-family, GitHub's T4 runners, or Hugging
+  Face T4 jobs.<sup class="cite">[10]</sup><sup class="cite">[15]</sup><sup class="cite">[33]</sup>
+- <strong>Metal</strong> on a macOS VM goes through Apple's paravirtualized graphics, not the physical GPU.<sup class="cite">[26]</sup>
+- GitHub's hosted Macs show up to WebGL as "ANGLE Metal Renderer: Apple Paravirtual device".<sup class="cite">[23]</sup></p>
+<p><strong>C3. Upstream readiness gates two legs.</strong>
+- Upstream's <code>detect_gpu_backend</code> returns <code>cpu</code> on Windows unconditionally ("GPU asset variants for
+  Windows are not wired into the manifest yet"). The pinned manifest has no Windows CUDA asset.<sup class="cite">[7]</sup><sup class="cite">[6]</sup>
+- The macOS and Windows newt binaries carry <code>UNVERIFIED_DOWNLOAD_AND_COMPUTE_BEFORE_USE</code> checksums,
+  so upstream refuses to pair there.<sup class="cite">[8]</sup>
+- This is also the open scope of CUR-1963, the parent ticket for exactly this work.<sup class="cite">[5]</sup></p>
+<p><strong>C4. The GUI's own end-to-end test uses a different driver on each OS.</strong>
+- <code>tauri-driver</code> (used by <code>tools/e2e-smoke.py</code>) supports Windows and Linux.
+- macOS needs WebdriverIO's embedded WebDriver service instead.<sup class="cite">[43]</sup>
+- The macOS legs will need a second e2e harness.</p>
+<h2>What you already have</h2>
+<table>
+<thead>
+<tr>
+<th>Asset</th>
+<th>Verdict</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>aipotluck.org <code>ci-runners/</code></strong> (CDK, CloudSnorkel cdk-github-runners v0.17.1, EC2, us-west-2)<sup class="cite">[1]</sup></td>
+<td><strong>Primary fit for Linux CPU; extensible to Linux CUDA, Windows CPU and Windows CUDA</strong></td>
+<td>Ephemeral one-job-per-instance runners already exist, along with alarms and a deploy script.<sup class="cite">[1]</sup> The construct supports Windows images and GPU instance types on its EC2 provider.<sup class="cite">[12]</sup> Today it has one Ubuntu 24.04 image and two CPU sizes.<sup class="cite">[2]</sup></td>
+</tr>
+<tr>
+<td><strong>That AWS account's 32-vCPU spot quota</strong><sup class="cite">[4]</sup></td>
+<td>⚠️ Constraint</td>
+<td>Bursts already overflow to on-demand. A quota raise to 256 was closed without being granted.<sup class="cite">[4]</sup> GPU instance families have their own quotas. ⚠️ Verify G-family vCPU quota before planning spot GPU runners.</td>
+</tr>
+<tr>
+<td><strong>GitHub org <code>currentai-org</code></strong></td>
+<td>Partial</td>
+<td>Hosted minutes are being bought (Linux billed at $0.006/min; Sept: 119,087 min).<sup class="cite">[3]</sup> The org is still on the <code>free</code> plan.<sup class="cite">[3]</sup> GitHub's GPU runners and larger Mac runners need Team or Enterprise.<sup class="cite">[11]</sup> Standard <code>macos-latest</code> (M1, 3 vCPU) and Windows runners need no upgrade.<sup class="cite">[9]</sup></td>
+</tr>
+<tr>
+<td><strong>Jelastic/Virtuozzo, Vercel, Fly</strong></td>
+<td>Not usable</td>
+<td>These host aipotluck.org's web previews and services. None offers desktop-OS or GPU CI runners (from the repo's environment docs).</td>
+</tr>
+<tr>
+<td><strong>Local hardware you own</strong> (this Pi, the Jetson boards upstream already tests on)</td>
+<td>Partial, last resort</td>
+<td>Useful as ad-hoc ARM and Jetson legs. None of it is x86 Windows, an NVIDIA desktop GPU, or a Mac.</td>
+</tr>
+<tr>
+<td><strong>Linear CUR-1963 + children</strong> (CUR-1966 macOS CPU, CUR-1968 macOS Metal, CUR-1967 Windows CPU, CUR-1970 Windows CUDA)</td>
+<td>Tracking home</td>
+<td>The backlog for exactly this work already exists, assigned to you.<sup class="cite">[5]</sup></td>
+</tr>
+</tbody>
+</table>
+<h2>Capability matrix</h2>
+<p>✅ works · ⚠️ verify · ❌ not possible · — not offered</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Linux CPU</th>
+<th>Linux CUDA</th>
+<th>macOS CPU</th>
+<th>macOS Metal</th>
+<th>Win CPU</th>
+<th>Win CUDA</th>
+<th>Billing shape</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Existing AWS stack, extended</strong></td>
+<td>✅ today<sup class="cite">[2]</sup></td>
+<td>✅ add a <code>g4dn</code> provider<sup class="cite">[12]</sup></td>
+<td>❌ no macOS provider<sup class="cite">[12]</sup></td>
+<td>❌</td>
+<td>✅ add a Windows image<sup class="cite">[12]</sup></td>
+<td>⚠️ <code>g4dn</code> + Windows + NVIDIA driver, needs a custom image<sup class="cite">[41]</sup></td>
+<td>Per-second EC2, spot or on-demand<sup class="cite">[15]</sup></td>
+</tr>
+<tr>
+<td><strong>GitHub-hosted standard</strong></td>
+<td>✅</td>
+<td>❌ no GPU<sup class="cite">[9]</sup></td>
+<td>✅ M1, 3 vCPU<sup class="cite">[9]</sup></td>
+<td>⚠️ paravirtual Metal, functional only<sup class="cite">[23]</sup><sup class="cite">[25]</sup></td>
+<td>✅</td>
+<td>❌</td>
+<td>Per minute<sup class="cite">[11]</sup></td>
+</tr>
+<tr>
+<td><strong>GitHub-hosted larger + GPU</strong> (Team plan)</td>
+<td>✅</td>
+<td>✅ T4<sup class="cite">[10]</sup></td>
+<td>✅ M2 Pro 5-core<sup class="cite">[10]</sup></td>
+<td>⚠️ same paravirtual caveat</td>
+<td>✅</td>
+<td>✅ T4<sup class="cite">[10]</sup></td>
+<td>Per minute, no included minutes<sup class="cite">[11]</sup></td>
+</tr>
+<tr>
+<td><strong>EC2 Mac Dedicated Host</strong></td>
+<td>—</td>
+<td>—</td>
+<td>✅ bare metal<sup class="cite">[14]</sup></td>
+<td>✅ physical GPU<sup class="cite">[14]</sup></td>
+<td>—</td>
+<td>—</td>
+<td>24 h minimum per host<sup class="cite">[14]</sup></td>
+</tr>
+<tr>
+<td><strong>Cirrus Runners</strong></td>
+<td>✅</td>
+<td>⚠️ "Linux GPU" listed; card unverified</td>
+<td>✅ M4 Pro<sup class="cite">[28]</sup></td>
+<td>⚠️ VM (Tart), virtualized GPU, verify</td>
+<td>—</td>
+<td>—</td>
+<td>$150/month per concurrent runner, unlimited minutes<sup class="cite">[28]</sup></td>
+</tr>
+<tr>
+<td><strong>Namespace</strong></td>
+<td>✅</td>
+<td>—</td>
+<td>✅ M4 Pro / M5 Max<sup class="cite">[30]</sup></td>
+<td>⚠️ "hardware acceleration for graphics" claimed<sup class="cite">[30]</sup></td>
+<td>—</td>
+<td>—</td>
+<td>Plan plus unit-minutes<sup class="cite">[31]</sup></td>
+</tr>
+<tr>
+<td><strong>RunsOn</strong> (in our AWS account)</td>
+<td>✅</td>
+<td>✅ any EC2 GPU<sup class="cite">[27]</sup></td>
+<td>—</td>
+<td>—</td>
+<td>✅ incl. license in spot price<sup class="cite">[27]</sup></td>
+<td>⚠️</td>
+<td>EC2 cost plus a yearly license from ~$350<sup class="cite">[27]</sup></td>
+</tr>
+<tr>
+<td><strong>Hugging Face Jobs</strong> (as llama.cpp uses)</td>
+<td>—</td>
+<td>✅ T4 runner label<sup class="cite">[20]</sup></td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>T4-medium $0.60/h<sup class="cite">[33]</sup></td>
+</tr>
+<tr>
+<td><strong>Scaleway Mac mini M4</strong></td>
+<td>—</td>
+<td>—</td>
+<td>✅ dedicated<sup class="cite">[29]</sup></td>
+<td>✅ no hypervisor<sup class="cite">[29]</sup></td>
+<td>—</td>
+<td>—</td>
+<td>€0.22/h, 24 h minimum<sup class="cite">[29]</sup></td>
+</tr>
+<tr>
+<td><strong>Local hardware</strong> (Mac mini + NVIDIA PC)</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅ bare metal</td>
+<td>✅</td>
+<td>✅</td>
+<td>Purchase plus your maintenance time</td>
+</tr>
+</tbody>
+</table>
+<h2>The options</h2>
+<p><strong>Extend the existing aipotluck.org AWS stack (recommended core).</strong>
+- The CDK app already handles the hard parts: the GitHub App, webhooks, one-job ephemeral instances,
+  failure alarms and weekly image rebuilds.<sup class="cite">[1]</sup><sup class="cite">[2]</sup>
+- CloudSnorkel's EC2 provider supports Windows images and GPU instances.<sup class="cite">[12]</sup>
+- Adding a <code>g4dn.xlarge</code> Linux image with the NVIDIA driver and a Windows image (CPU, plus a
+  <code>g4dn</code> variant with the NVIDIA driver) gives four of the six legs.
+- On-demand rates in us-west-2:<sup class="cite">[15]</sup>
+  - <code>g4dn.xlarge</code> (T4, 16 GB): $0.526/h Linux, $0.71/h Windows;
+  - Windows <code>m6a.xlarge</code>: $0.3568/h.
+- Spot <code>g4dn.xlarge</code> on Linux is $0.289/h.<sup class="cite">[16]</sup>
+- Caveats:
+  - the account's spot quota is already saturated by web CI;<sup class="cite">[4]</sup>
+  - Windows NVIDIA drivers for EC2 come from AWS's own driver channel and need baking into an
+    image;<sup class="cite">[41]</sup>
+  - the stack lives in a repo with its own deploy gate (<code>deploy.sh</code> refuses unmerged code), so
+    changes go through aipotluck.org's process.<sup class="cite">[1]</sup>
+- The project already plans to move this stack into the Current AI account (SOL-96). That is
+  another reason to coordinate rather than fork it.</p>
+<p><strong>GitHub-hosted runners.</strong>
+- Standard runners need no infrastructure:
+  - Linux: $0.006/min;
+  - Windows: $0.010/min;
+  - macOS M1 3-core: $0.062/min.<sup class="cite">[11]</sup>
+- Larger runners add:<sup class="cite">[11]</sup>
+  - M2 Pro 5-core macOS: $0.102/min;
+  - T4 GPU Linux: $0.052/min;
+  - T4 GPU Windows: $0.102/min.
+- They require GitHub Team or Enterprise, and included minutes don't apply to them.<sup class="cite">[11]</sup>
+- macOS 14 images retire on 2026-11-02, so target <code>macos-15</code>/<code>macos-latest</code> (26).<sup class="cite">[24]</sup>
+- Hosted arm64 Macs have no nested virtualization.<sup class="cite">[9]</sup></p>
+<p><strong>Metal on hosted Macs: what can and can't be tested.</strong>
+- Hosted arm64 macOS VMs expose a paravirtual Metal device.<sup class="cite">[23]</sup>
+- llama.cpp's own <code>build-apple.yml</code> builds with Metal on <code>macos-latest</code> and runs a model with all
+  layers offloaded (<code>-ngl 99</code>).<sup class="cite">[18]</sup>
+- So "the GUI's llama-server starts and offloads to Metal" is checkable there.
+- Two limits:
+  - the paravirtual device under-reports its Metal feature set, so llama.cpp selects slower kernels
+    and throughput is not representative;<sup class="cite">[25]</sup>
+  - memory is tight: a hosted-runner MPS workload hit an out-of-memory error at a 7.93 GB cap.<sup class="cite">[22]</sup>
+- llama.cpp still keeps a separate <strong>self-hosted</strong> bare-metal Metal runner for real coverage.<sup class="cite">[19]</sup><sup class="cite">[17]</sup></p>
+<p><strong>EC2 Mac (bare metal).</strong>
+- Real Apple silicon, the physical GPU, and SSM integration.<sup class="cite">[13]</sup>
+- Billed per Dedicated Host with a 24-hour minimum allocation; one Mac instance per host.<sup class="cite">[14]</sup>
+- Host rates in us-west-2: M1 (<code>mac2</code>) $0.65/h, M2 $0.878/h, M4 $1.23/h, M4 Pro $1.97/h.<sup class="cite">[15]</sup>
+- The 24 h minimum alone is $15.60 to $47.28 per allocation.
+- Always-on is $474 to $1,438 per month: poor value for a nightly 20-minute leg.</p>
+<p><strong>Third-party runner vendors.</strong>
+- <strong>Cirrus Runners:</strong> $150/month per concurrent runner with unlimited minutes, on M4 Pro macOS,
+  Linux, and Linux GPU.<sup class="cite">[28]</sup> Its macOS runners are Tart VMs,<sup class="cite">[39]</sup> so Metal is still virtualized.
+  ⚠️ Verify the GPU feature set.
+- <strong>Namespace:</strong> M4 Pro/M5 Max macOS and claims graphics hardware acceleration.<sup class="cite">[30]</sup> Pricing is a
+  plan plus unit-minutes.<sup class="cite">[31]</sup>
+- <strong>Blacksmith:</strong> Linux and Windows Server 2025 runners, no GPU listed.<sup class="cite">[32]</sup>
+- <strong>RunsOn:</strong> like our CloudSnorkel stack (runs in our AWS account, any EC2 type including GPU and
+  Windows), with a commercial license.<sup class="cite">[27]</sup> It would duplicate what we already run.
+- <strong>MacStadium:</strong> bare-metal Macs and Orka VMs, sales-quoted only.<sup class="cite">[40]</sup>
+- <strong>Scaleway:</strong> dedicated, no-hypervisor Mac mini M4 from €0.22/h, also with a 24 h minimum.<sup class="cite">[29]</sup>
+  As a monthly rental that is a cheap persistent bare-metal Metal box, though in Paris.</p>
+<p><strong>Other GPU clouds.</strong>
+- Azure's T4 VM (NC4as T4 v3) lists at about $0.53 to $0.63/h, the same ballpark as <code>g4dn.xlarge</code>.<sup class="cite">[35]</sup>
+- It would add a second cloud account and runner stack for no price advantage over the AWS stack we
+  already run.</p>
+<p><strong>Hugging Face Jobs (CUDA only).</strong>
+- llama.cpp runs its CUDA CI on a <code>hf-jobs-t4-medium</code> runner label.<sup class="cite">[20]</sup>
+- HF prices a T4-medium at $0.60/h.<sup class="cite">[33]</sup>
+- Hugging Face Jobs runs Docker images on chosen GPU hardware.<sup class="cite">[34]</sup> How that integrates with GitHub
+  Actions outside the ggml org is ⚠️ unverified.
+- Linux only, and not cheaper than our own <code>g4dn</code>.</p>
+<p><strong>Local hardware (last resort).</strong>
+- A Mac mini plus a Windows/Linux PC with an NVIDIA GPU, each registered as a persistent self-hosted
+  runner, covers all six legs on bare metal. This is what llama.cpp does for Metal.<sup class="cite">[19]</sup>
+- Costs:
+  - persistent runners accumulate state between jobs (the CUR-1534 analysis requires ephemeral
+    runners for this reason);<sup class="cite">[3]</sup>
+  - OS, driver and Xcode updates become our job;
+  - self-hosted runners must never serve a public repo, since any PR could run code on them.<sup class="cite">[36]</sup></p>
+<h2>Cost shape</h2>
+<p>Workload assumption (mine, not sourced): each leg is a build plus a GUI smoke test, about <strong>20
+minutes</strong>. Costs below are computed from the cited unit prices<sup class="cite">[11]</sup><sup class="cite">[15]</sup><sup class="cite">[16]</sup><sup class="cite">[33]</sup> for two cadences.
+"Nightly" is 30 runs/month; "per-merge" is about 120 runs/month.</p>
+<table>
+<thead>
+<tr>
+<th>Leg</th>
+<th>GitHub-hosted, nightly</th>
+<th>AWS on-demand, nightly</th>
+<th>GitHub-hosted, per-merge</th>
+<th>AWS on-demand, per-merge</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Linux CPU</td>
+<td>$7.20</td>
+<td>$3.06</td>
+<td>$28.80</td>
+<td>$12.24</td>
+</tr>
+<tr>
+<td>Linux CUDA</td>
+<td>$31.20 (Team)</td>
+<td>$5.26 (spot $2.89; HF $6.00)</td>
+<td>$124.80</td>
+<td>$21.04</td>
+</tr>
+<tr>
+<td>macOS CPU</td>
+<td>$37.20</td>
+<td>—</td>
+<td>$148.80</td>
+<td>—</td>
+</tr>
+<tr>
+<td>macOS Metal (M2 Pro larger)</td>
+<td>$61.20 (Team)</td>
+<td>—</td>
+<td>$244.80</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Windows CPU</td>
+<td>$13.20</td>
+<td>$3.57</td>
+<td>$52.80</td>
+<td>$14.27</td>
+</tr>
+<tr>
+<td>Windows CUDA</td>
+<td>$61.20 (Team)</td>
+<td>$7.10</td>
+<td>$244.80</td>
+<td>$28.40</td>
+</tr>
+<tr>
+<td><strong>All six</strong></td>
+<td><strong>$211.20</strong></td>
+<td>n/a</td>
+<td><strong>$844.80</strong></td>
+<td>n/a</td>
+</tr>
+</tbody>
+</table>
+<p>Ratios that drive the decision:
+- GitHub's GPU runner versus an on-demand <code>g4dn.xlarge</code>: <strong>5.93×</strong> more on Linux and <strong>8.62×</strong> more
+  on Windows.
+- A macOS M1 minute on GitHub costs <strong>10.3×</strong> a Linux 2-core minute.
+- An always-on EC2 M4 Mac host costs <strong>6.0×</strong> a Cirrus runner per month.
+- A Cirrus runner breaks even with GitHub's M2 Pro runner at <strong>24.5 hours</strong> of use per month.</p>
+<p>Scenario monthly totals (nightly / per-merge):</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Nightly</th>
+<th>Per-merge</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A.</strong> All GitHub-hosted (Team plan)</td>
+<td>$211.20</td>
+<td>$844.80</td>
+</tr>
+<tr>
+<td><strong>B.</strong> AWS stack for Linux and Windows (4 legs) + GitHub standard <code>macos-latest</code> for macOS CPU and functional Metal</td>
+<td><strong>$93.39</strong></td>
+<td>$373.55</td>
+</tr>
+<tr>
+<td><strong>C1.</strong> B, but Metal on a Cirrus M4 Pro runner</td>
+<td>$206.19</td>
+<td>—</td>
+</tr>
+<tr>
+<td><strong>C2.</strong> B, but Metal on an always-on EC2 M4 host</td>
+<td>$954.09</td>
+<td>—</td>
+</tr>
+<tr>
+<td><strong>D.</strong> Local hardware for all six</td>
+<td>one-off hardware + maintenance time</td>
+<td>same</td>
+</tr>
+<tr>
+<td><strong>E.</strong> AWS stack for Linux and Windows (4 legs) + the incoming Mac mini M5 for macOS CPU and bare-metal Metal</td>
+<td><strong>$18.99</strong> + Mac upkeep</td>
+<td>$75.95 + Mac upkeep</td>
+</tr>
+</tbody>
+</table>
+<p>The AWS rows are on-demand, before spot savings. Scenario B's macOS legs use the standard M1 runner
+($0.062/min), which needs no Team plan. Scenario E removes the $74.40/month (nightly) or $297.60/month
+(per-merge) of hosted macOS minutes that B would bill. Its macOS legs cost electricity and time,
+not minutes.</p>
+<h2>Scenarios</h2>
+<p><strong>Scenario A: all GitHub-hosted.</strong> Pros:
+- fastest to set up: Tauri's reference workflow is a three-OS matrix, using the <code>tauri-action</code> GitHub Action;<sup class="cite">[37]</sup><sup class="cite">[38]</sup>
+- nothing to maintain.</p>
+<p>Cons:
+- requires upgrading the org to Team;<sup class="cite">[11]</sup>
+- GPU legs are 6 to 9× the cost of AWS;
+- Metal is paravirtual.</p>
+<p><strong>Scenario B (recommended): extend our AWS stack, use hosted Macs.</strong> Pros:
+- reuses infrastructure, alarms and process the team already runs;<sup class="cite">[1]</sup>
+- GPU legs at EC2 prices;
+- no plan upgrade needed;
+- cheapest complete coverage.</p>
+<p>Cons:
+- Windows and GPU AMIs to build and maintain;
+- contention with the already-saturated spot quota;<sup class="cite">[4]</sup>
+- the macOS Metal leg proves function, not speed.<sup class="cite">[25]</sup></p>
+<p><strong>Scenario C: B plus one bare-metal Mac for Metal performance.</strong> Adds real Metal benchmark numbers,
+the gap llama.cpp itself closes with a self-hosted Mac.<sup class="cite">[19]</sup> Choose this when you need:
+- the GUI's benchmark and LocalScore numbers on macOS; or
+- regressions caught in Metal kernel selection.</p>
+<p>Cheapest steady option: a fixed-price vendor runner (Cirrus) or a monthly Scaleway Mac.<sup class="cite">[28]</sup><sup class="cite">[29]</sup>
+EC2 Mac's 24 h minimum makes it the most expensive per test hour.<sup class="cite">[14]</sup></p>
+<p><strong>Scenario E (recommended): the AWS stack plus the incoming Mac mini M5.</strong>
+Scenario B for the four Linux and Windows legs, with the macOS legs moved onto the Mac mini M5
+Andrew is already buying. It is local hardware (the last-resort class), but limited to the one
+platform where every cloud option is either virtualized or expensive.</p>
+<p>Pros:
+- <strong>Bare-metal Metal</strong>: the only option here that measures real Metal kernel selection and
+  throughput. Hosted and Tart-based Macs go through the paravirtual GPU.<sup class="cite">[25]</sup><sup class="cite">[23]</sup>
+- <strong>No recurring cloud cost</strong> for macOS, which removes the most expensive per-minute legs;<sup class="cite">[11]</sup>
+  EC2 Mac's 24 h minimum avoided.<sup class="cite">[14]</sup>
+- A newer, larger chip than any hosted or EC2 Mac in this report (M1 to M4 Pro).<sup class="cite">[9]</sup><sup class="cite">[15]</sup>
+- Matches how llama.cpp itself covers Metal: one self-hosted Apple-silicon runner.<sup class="cite">[19]</sup></p>
+<p>Cons:
+- <strong>Persistent hardware.</strong> GitHub recommends ephemeral runners, which unregister after each
+  job.<sup class="cite">[44]</sup><sup class="cite">[45]</sup> A bare-metal persistent runner otherwise carries state between jobs, which
+  is why CUR-1534 required ephemeral cloud runners.<sup class="cite">[3]</sup>
+- <strong>A single point of failure.</strong> If the mini sleeps, reboots for an update or loses network, the macOS
+  legs queue. Keep a hosted-Mac fallback.
+- <strong>Security.</strong> Never attach it to a public repo, since fork PRs could run code on a machine in your
+  home or office.<sup class="cite">[36]</sup>
+- <strong>Maintenance is yours</strong>: macOS and Xcode updates, the runner agent, disk space, power.
+  The runner agent self-updates by default.<sup class="cite">[44]</sup></p>
+<p>How to run it with the least upkeep (the plan; scripts not yet written):
+1. <strong>Two runner modes on one machine:</strong>
+   - <strong>macOS Metal leg:</strong> bare metal, under a dedicated non-admin macOS user, registered as an
+     ephemeral runner and re-registered after every job. Bare metal is the only way to get real
+     Metal numbers.<sup class="cite">[45]</sup>
+   - <strong>macOS CPU leg:</strong> inside a throwaway Tart VM cloned from a golden image per job. That gives a
+     clean install every time, like the cloud runners.<sup class="cite">[39]</sup>
+2. <strong>At most two macOS VMs at a time.</strong> Apple's licence caps a Mac at two concurrent macOS VMs, which
+   bounds how many CPU-leg jobs can run in parallel.<sup class="cite">[46]</sup><sup class="cite">[47]</sup>
+3. <strong>Labels:</strong> <code>[self-hosted, macOS, ARM64, metal-baremetal]</code> and <code>[self-hosted, macOS, ARM64,
+   tart-vm]</code>, so workflows pick a mode explicitly.
+4. <strong>Scope:</strong> register at the GUI repo, or a private org runner group, only.
+5. <strong>Unattended operation:</strong>
+   - no sleep;
+   - restart after power failure;
+   - automatic login for the runner user;
+   - macOS updates on a manual schedule, so an update can't reboot it mid-job.
+6. <strong>Fallback:</strong> a workflow input (or repo variable, as aipotluck.org does with <code>CI_CLIENT_RUNS_ON</code>)
+   flips the macOS legs back to <code>macos-latest</code> when the mini is down.<sup class="cite">[1]</sup></p>
+<p><strong>Scenario D: local hardware.</strong> Pros:
+- lowest marginal cost;
+- real GPUs everywhere.</p>
+<p>Cons:
+- persistent, stateful runners;
+- your maintenance time;
+- must stay off public repos;<sup class="cite">[36]</sup>
+- a single point of failure.</p>
+<p>Keep it for exploratory work, not as the gate.</p>
+<h2>Recommended architecture</h2>
+<ul>
+<li><strong>Every push (fast, ~$0):</strong> unit, contract and conformance tests plus a compile check on all three
+  OSes. CPU-only, no GPU:</li>
+<li>Linux on the existing <code>aipotluck-2cpu</code> label;</li>
+<li>Windows and macOS on standard hosted runners.</li>
+</ul>
+<p>Upstream llama.cpp does the same: compile-only Windows CUDA builds on hosted <code>windows-2022</code>.<sup class="cite">[21]</sup>
+- <strong>Nightly or on bump (scenario E; scenario B when the Mac mini is offline):</strong>
+  - the full six-leg matrix;
+  - a real installer run;
+  - a real model load;
+  - on GPU legs, an assertion that layers were offloaded to the GPU (from llama-server's log or
+    <code>/props</code>).</p>
+<p>Run it on every <code>chore/upstream-bump-*</code> branch the sync job prepares. That turns the existing
+  upstream watchdog into a real compatibility gate.
+- <strong>Metal performance:</strong> the GUI's benchmark and LocalScore run on the Mac mini's bare-metal leg, so
+  a Metal kernel regression shows up as a number, not a guess.
+- <strong>Before a release:</strong> a manual pass on real Linux and Windows desktops with NVIDIA GPUs (the
+  macOS one is already covered by the mini). A rented bare-metal Mac (scenario C) is only needed if
+  the mini is unavailable for a long period.</p>
+<h2>Best-practice checklist</h2>
+<ul>
+<li><strong>Ephemeral, one job per runner.</strong> Persistent runners accumulate cross-job state. The aipotluck.org
+  stack already works this way, and this project should inherit it.<sup class="cite">[3]</sup><sup class="cite">[1]</sup></li>
+<li><strong>Never use self-hosted runners on a public repo.</strong> Fork PRs can run code on them.<sup class="cite">[36]</sup> The GUI repo
+  is private today; revisit before open-sourcing.</li>
+<li><strong>Build Linux release artifacts on the oldest supported base.</strong> Tauri's AppImage guidance is to
+  build on Ubuntu 22.04 for glibc compatibility.<sup class="cite">[42]</sup> The current CI image is 24.04, so add a 22.04
+  image or container for the release build.<sup class="cite">[2]</sup></li>
+<li><strong>Separate "builds" from "runs on the GPU."</strong> Assert offload explicitly in the test. Hosted Metal
+  will load a model whether or not the kernel path is representative.<sup class="cite">[25]</sup></li>
+<li><strong>Pin macOS images.</strong> macOS 14 retires 2026-11-02, with brownouts before then.<sup class="cite">[24]</sup></li>
+<li><strong>Put the matrix where the cadence is cheap.</strong> GPU minutes are the expensive ones: run them nightly
+  and on upstream bumps, not on every push.</li>
+</ul>
+<h2>Verify these before committing</h2>
+<ol>
+<li><strong>GPU quota.</strong> In the aipotluck AWS account, list the G-family quotas by name rather than trusting a
+   remembered code: <code>aws service-quotas list-service-quotas --service-code ec2 --region us-west-2
+   --query "Quotas[?contains(QuotaName,'G and VT')].[QuotaName,QuotaCode,Value]"</code>. Expected: the
+   on-demand quota is ≥ 4 vCPU, or <code>g4dn.xlarge</code> can't launch at all. Check the spot G-quota in the
+   same output.<sup class="cite">[4]</sup></li>
+<li><strong>Metal on a hosted Mac.</strong>
+   - Run one <code>macos-latest</code> job that installs the GUI's pinned llama.cpp asset.
+   - Run <code>llama-server --list-devices</code>, then load a small GGUF with <code>-ngl 99</code>.
+   - Expected: a Metal device listed (likely "Apple Paravirtual device") and layers offloaded.<sup class="cite">[23]</sup><sup class="cite">[18]</sup></li>
+<li><strong>CloudSnorkel Windows + GPU.</strong>
+   - <code>cdk synth</code> a provider using <code>Os.WINDOWS</code> with <code>instanceType: g4dn.xlarge</code> and an image component
+     that installs the NVIDIA Windows driver.<sup class="cite">[12]</sup><sup class="cite">[41]</sup>
+   - Expected: synth succeeds and <code>nvidia-smi</code> runs in a probe job.</li>
+<li><strong>Upstream Windows CUDA.</strong> Confirm whether llama.cpp's release has a Windows CUDA asset for the
+   pinned tag. If so, file the upstream change: add it to <code>llama_version.json</code>, and make
+   <code>detect_gpu_backend</code> return <code>cuda</code> on Windows.<sup class="cite">[6]</sup><sup class="cite">[7]</sup></li>
+<li>
+<p><strong>macOS e2e driver.</strong> Add <code>@wdio/tauri-service</code> to the GUI repo and run the smoke flow on a hosted
+   Mac.<sup class="cite">[43]</sup></p>
+</li>
+<li>
+<p><strong>Mac mini runner, once it arrives</strong> (no scripts yet, by request):
+   - register it as an ephemeral runner on the GUI repo only;
+   - run the Metal smoke test with <code>-ngl 99</code>, then one <code>llama-bench</code>;
+   - expected: <code>--list-devices</code> shows the M5 GPU by name, not "Apple Paravirtual device", and the
+     generation speed is well above the same run on <code>macos-latest</code>.<sup class="cite">[23]</sup><sup class="cite">[25]</sup></p>
+</li>
+</ol>
+<h2>Open questions for you</h2>
+<ol>
+<li>Is upgrading the GitHub org to Team on the table? It unlocks GPU and larger Mac runners as a
+   zero-maintenance fallback, but scenario B doesn't need it.<sup class="cite">[11]</sup></li>
+<li>Should this project's runners live in aipotluck.org's <code>ci-runners/</code> stack (shared with web CI, its
+   deploy gate and the SOL-96 account move), or in a sibling stack in the same account?<sup class="cite">[1]</sup></li>
+<li>Do you need Metal and CUDA <em>performance</em> numbers in CI (benchmark and LocalScore), or only "it
+   loads on the GPU"? The answer decides whether scenario C is needed.</li>
+<li>Is the GUI repo staying private? Public repos rule out self-hosted runners for untrusted PRs.<sup class="cite">[36]</sup></li>
+</ol>
+<h2>Addendum (2026-10-09): build-only automation</h2>
+<p>Scope narrowed to producing release installers; testing on GPUs is deferred.</p>
+<h3>Which build targets are actually needed</h3>
+<p>GPU support is <strong>not</strong> a GUI build dimension:
+- The GUI binary contains no CUDA or Metal code. It ships a CPU-only shell (Tauri), a bundled Python
+  and the pinned CLI source.
+- The CLI's installer picks and downloads the right llama.cpp asset (CPU, CUDA, Vulkan, ROCm; Metal
+  built into the macOS asset) on the user's machine at setup time.<sup class="cite">[6]</sup><sup class="cite">[7]</sup>
+- So one GUI binary per <strong>OS × CPU architecture</strong> covers every GPU variant on that platform.</p>
+<p>The architecture list is bounded by what the bundled pieces exist for:</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Targets with an asset</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bundled Python (<code>runtime/python_version.json</code>)</td>
+<td>linux-x64, linux-arm64, macos-arm64, macos-x64, windows-x64</td>
+</tr>
+<tr>
+<td>newt tunnel client<sup class="cite">[8]</sup></td>
+<td>linux-x64, linux-arm64, macos-arm64, macos-x64, windows-x64</td>
+</tr>
+<tr>
+<td>llama.cpp release assets<sup class="cite">[6]</sup></td>
+<td>the same five plus windows-arm64 (CPU only)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Five build targets:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Target</th>
+<th>Priority</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>linux-x64</td>
+<td>must</td>
+<td>Ubuntu/Debian desktops; also covers Linux CUDA, Vulkan and ROCm users</td>
+</tr>
+<tr>
+<td>windows-x64</td>
+<td>must</td>
+<td>also covers Windows CUDA users once upstream wires it</td>
+</tr>
+<tr>
+<td>macos-arm64</td>
+<td>must</td>
+<td>all Apple-silicon Macs; Metal comes from the llama.cpp asset</td>
+</tr>
+<tr>
+<td>linux-arm64</td>
+<td>nice</td>
+<td>Jetson boards (upstream's confirmed hardware), Pi-class devices</td>
+</tr>
+<tr>
+<td>macos-x64</td>
+<td>optional</td>
+<td>Intel Macs. Cross-compiles on an Apple-silicon Mac, so no Intel hardware is needed.<sup class="cite">[37]</sup></td>
+</tr>
+</tbody>
+</table>
+<p>Two notes on the list:
+- windows-arm64 is skipped: there is no bundled Python or newt for it yet.
+- Linux targets must be built on <strong>Ubuntu 22.04</strong> (or in a 22.04 container) so the binary runs on
+  22.04+. Building on a newer distro raises the glibc floor.<sup class="cite">[42]</sup> This repo's Debian 13 dev build
+  needs GLIBC_2.39, measured.</p>
+<h3>Option 1: fully cloud-hosted (GitHub-hosted runners)</h3>
+<p>One workflow, a five-way matrix, <code>tauri-action</code> (or the repo's own <code>tools/build.sh</code>), triggered on a
+version tag. It uploads the <code>.deb</code>, AppImage, <code>.dmg</code> and <code>.msi</code>/<code>.exe</code> to a GitHub Release.<sup class="cite">[37]</sup><sup class="cite">[38]</sup></p>
+<table>
+<thead>
+<tr>
+<th>Target</th>
+<th>Runner label</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>linux-x64</td>
+<td><code>ubuntu-22.04</code></td>
+</tr>
+<tr>
+<td>linux-arm64</td>
+<td><code>ubuntu-22.04-arm</code> (GitHub-hosted arm64)<sup class="cite">[9]</sup></td>
+</tr>
+<tr>
+<td>windows-x64</td>
+<td><code>windows-latest</code></td>
+</tr>
+<tr>
+<td>macos-arm64 and macos-x64</td>
+<td><code>macos-latest</code>, two jobs, <code>--target</code> per arch<sup class="cite">[37]</sup></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Setup effort:</strong> one workflow file, roughly a day including fixing what breaks on the first
+  Windows and macOS builds. No machines, no accounts beyond GitHub.</li>
+<li><strong>Maintenance:</strong> essentially none. GitHub patches the images; we only bump labels when an image is
+  retired (macOS 14 retires 2026-11-02).<sup class="cite">[24]</sup></li>
+<li><strong>Cost,</strong> computed at ~12 runner-minutes per target per build on standard runners:<sup class="cite">[11]</sup></li>
+<li>all five targets: about <strong>$1.74 per release</strong>;</li>
+<li><strong>85.5%</strong> of that is the two macOS jobs ($0.062/min);</li>
+<li>8 releases/month ≈ <strong>$14</strong>; a nightly build of everything ≈ <strong>$52/month</strong>;</li>
+<li>without the macOS jobs, the same nightly build would be ≈ $7.56/month.</li>
+<li><strong>No GitHub plan upgrade</strong> is needed: these are standard runners, not larger or GPU ones.<sup class="cite">[11]</sup></li>
+<li><strong>Unsigned for now:</strong></li>
+<li>macOS users will see a Gatekeeper warning until there is an Apple Developer ID;</li>
+<li>Windows will show SmartScreen.</li>
+</ul>
+<p>Signing slots into the same workflow later, as secrets.</p>
+<h3>Option 2: hybrid with your own hardware</h3>
+<p>The same workflow, with <code>runs-on</code> switched per target to self-hosted runners:</p>
+<table>
+<thead>
+<tr>
+<th>Target</th>
+<th>Machine</th>
+<th>Caveat</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>macos-arm64 and macos-x64</td>
+<td>Mac mini M5</td>
+<td>Fastest builder of the lot. Cross-compiles x64.</td>
+</tr>
+<tr>
+<td>windows-x64</td>
+<td>Linux/Windows PC (Windows side)</td>
+<td>Needs VS Build Tools, Rust, Node, WebView2 SDK</td>
+</tr>
+<tr>
+<td>linux-x64</td>
+<td>Same PC, via WSL2 Ubuntu 22.04 (or a 22.04 VM/container)</td>
+<td>One box can't be a native Linux and a native Windows runner at the same time unless dual-runner via WSL2</td>
+</tr>
+<tr>
+<td>linux-arm64</td>
+<td>Raspberry Pi</td>
+<td>Must build inside an Ubuntu 22.04 container to keep glibc compatible.<sup class="cite">[42]</sup> The Hermes container on this Pi has no Docker daemon, so this needs a separate OS install or a native 22.04 rootfs. Slowest builder: the release compile alone took ~8.5 min here.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Setup effort:</strong></li>
+<li>three machines × (OS prep, toolchains, runner agent, auto-start, no-sleep);</li>
+<li>plus an Ubuntu 22.04 environment on two of them;</li>
+<li>realistically 2 to 4 days, with Windows the most fiddly.</li>
+<li><strong>Maintenance:</strong></li>
+<li>OS and toolchain updates on three boxes;</li>
+<li>disk cleanup (Rust <code>target/</code> grows by GBs);</li>
+<li>keeping them online;</li>
+<li>a release blocks whenever one is down.</li>
+</ul>
+<p>GitHub recommends ephemeral runners;<sup class="cite">[44]</sup> persistent home-lab runners accumulate state between
+  builds, so clean the workspace or use a container per job.
+- <strong>Security:</strong> fine on a private repo. Never attach these runners to a public one.<sup class="cite">[36]</sup>
+- <strong>Cost:</strong> about $0 in minutes. What you save is <strong>≈ $14/month</strong> at 8 releases, or ≈ $52/month if
+  you build nightly, almost all of it from the macOS jobs.</p>
+<h3>Recommendation</h3>
+<p><strong>Start with Option 1 (all hosted).</strong> The money at stake is small: a few dollars to tens of dollars
+a month. Option 2 costs days of setup and ongoing maintenance on three machines. And the hard parts
+of Option 2 (glibc-compatible Linux builds, a clean Windows toolchain) come free on hosted images.</p>
+<p>If anything moves on-prem later, move only the <strong>macOS jobs to the Mac mini</strong>:
+- that is 85% of the hosted bill;
+- the mini is already planned for Metal testing;
+- it is the one machine whose toolchain (Xcode, Rust, Node) is easy to keep current.</p>
+<p>Change one <code>runs-on</code> line to point the macOS jobs at the mini, and keep <code>macos-latest</code> as the
+fallback. Leave the Pi and the PC out unless GitHub minutes become a real constraint.</p>
+<h2>Sources</h2>
+<p><sup class="cite">[1]</sup> <a href="https://github.com/currentai-org/aipotluck.org/blob/develop/ci-runners/README.md">https://github.com/currentai-org/aipotluck.org/blob/develop/ci-runners/README.md</a> — aipotluck.org ci-runners/README.md (ephemeral self-hosted runners on EC2 spot)
+<sup class="cite">[2]</sup> <a href="https://github.com/currentai-org/aipotluck.org/blob/develop/ci-runners/main.go">https://github.com/currentai-org/aipotluck.org/blob/develop/ci-runners/main.go</a> — aipotluck.org ci-runners/main.go (CDK stack: sizes, Ubuntu 24.04 image)
+<sup class="cite">[3]</sup> <a href="https://linear.app/currentai-org/issue/CUR-1534/ci-minutes-not-correctness-are-what-keeps-gates-off-prs-an-ephemeral">https://linear.app/currentai-org/issue/CUR-1534/ci-minutes-not-correctness-are-what-keeps-gates-off-prs-an-ephemeral</a> — CUR-1534: ephemeral self-hosted runner on spot (cost analysis, billing observations)
+<sup class="cite">[4]</sup> <a href="https://linear.app/currentai-org/issue/SOL-102/the-accounts-32-vcpu-spot-quota-sends-most-ci-runners-to-on-demand-at">https://linear.app/currentai-org/issue/SOL-102/the-accounts-32-vcpu-spot-quota-sends-most-ci-runners-to-on-demand-at</a> — SOL-102: 32-vCPU spot quota in the AWS account
+<sup class="cite">[5]</sup> <a href="https://linear.app/currentai-org/issue/CUR-1963/build-test-architecture-support-for-various-local-inference-server">https://linear.app/currentai-org/issue/CUR-1963/build-test-architecture-support-for-various-local-inference-server</a> — CUR-1963: Build + test architecture support for local inference targets
+<sup class="cite">[6]</sup> <a href="https://github.com/currentai-org/aitpotluck-local-client/blob/main/llama_version.json">https://github.com/currentai-org/aitpotluck-local-client/blob/main/llama_version.json</a> — aitpotluck-local-client llama_version.json (pinned b10989 assets)
+<sup class="cite">[7]</sup> <a href="https://github.com/currentai-org/aitpotluck-local-client/blob/main/aipotluck/installer/platform_detect.py">https://github.com/currentai-org/aitpotluck-local-client/blob/main/aipotluck/installer/platform_detect.py</a> — aitpotluck-local-client platform_detect.py (backend detection)
+<sup class="cite">[8]</sup> <a href="https://github.com/currentai-org/aitpotluck-local-client/blob/main/newt_version.json">https://github.com/currentai-org/aitpotluck-local-client/blob/main/newt_version.json</a> — aitpotluck-local-client newt_version.json (UNVERIFIED mac/win checksums)
+<sup class="cite">[9]</sup> <a href="https://docs.github.com/en/actions/reference/runners/github-hosted-runners">https://docs.github.com/en/actions/reference/runners/github-hosted-runners</a> — GitHub Docs: GitHub-hosted runners reference
+<sup class="cite">[10]</sup> <a href="https://docs.github.com/en/actions/reference/runners/larger-runners">https://docs.github.com/en/actions/reference/runners/larger-runners</a> — GitHub Docs: Larger runners reference (incl. GPU T4)
+<sup class="cite">[11]</sup> <a href="https://docs.github.com/en/billing/reference/actions-runner-pricing">https://docs.github.com/en/billing/reference/actions-runner-pricing</a> — GitHub Docs: Actions runner pricing
+<sup class="cite">[12]</sup> <a href="https://github.com/CloudSnorkel/cdk-github-runners">https://github.com/CloudSnorkel/cdk-github-runners</a> — CloudSnorkel/cdk-github-runners README
+<sup class="cite">[13]</sup> <a href="https://aws.amazon.com/ec2/instance-types/mac">https://aws.amazon.com/ec2/instance-types/mac</a> — AWS: Amazon EC2 Mac instances
+<sup class="cite">[14]</sup> <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-mac-instances.html">https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-mac-instances.html</a> — AWS docs: Amazon EC2 Mac instances (Dedicated Host, 24h minimum)
+<sup class="cite">[15]</sup> <a href="https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-west-2/index.json">https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-west-2/index.json</a> — AWS Price List API, EC2 us-west-2 (published 2026-10-08)
+<sup class="cite">[16]</sup> <a href="https://instances.vantage.sh/aws/ec2/g4dn.xlarge">https://instances.vantage.sh/aws/ec2/g4dn.xlarge</a> — Vantage: g4dn.xlarge pricing (spot)
+<sup class="cite">[17]</sup> <a href="https://github.com/ggml-org/llama.cpp/blob/master/ci/README.md">https://github.com/ggml-org/llama.cpp/blob/master/ci/README.md</a> — llama.cpp ci/README.md (self-hosted heavy CI)
+<sup class="cite">[18]</sup> <a href="https://github.com/ggml-org/llama.cpp/blob/master/.github/workflows/build-apple.yml">https://github.com/ggml-org/llama.cpp/blob/master/.github/workflows/build-apple.yml</a> — llama.cpp build-apple.yml (Metal on macos-latest)
+<sup class="cite">[19]</sup> <a href="https://github.com/ggml-org/llama.cpp/blob/master/.github/workflows/ci-self-hosted-metal.yml">https://github.com/ggml-org/llama.cpp/blob/master/.github/workflows/ci-self-hosted-metal.yml</a> — llama.cpp ci-self-hosted-metal.yml
+<sup class="cite">[20]</sup> <a href="https://github.com/ggml-org/llama.cpp/blob/master/.github/workflows/ci-self-hosted-cuda.yml">https://github.com/ggml-org/llama.cpp/blob/master/.github/workflows/ci-self-hosted-cuda.yml</a> — llama.cpp ci-self-hosted-cuda.yml (hf-jobs-t4-medium)
+<sup class="cite">[21]</sup> <a href="https://github.com/ggml-org/llama.cpp/blob/master/.github/workflows/build-cuda-windows.yml">https://github.com/ggml-org/llama.cpp/blob/master/.github/workflows/build-cuda-windows.yml</a> — llama.cpp build-cuda-windows.yml (windows-2022 compile-only)
+<sup class="cite">[22]</sup> <a href="https://github.com/actions/runner-images/issues/9918">https://github.com/actions/runner-images/issues/9918</a> — runner-images #9918: macOS runner MPS out of memory
+<sup class="cite">[23]</sup> <a href="https://github.com/actions/runner-images/issues/14840">https://github.com/actions/runner-images/issues/14840</a> — runner-images #14840: macOS ARM64 paravirtual Metal device
+<sup class="cite">[24]</sup> <a href="https://github.blog/changelog/2026-10-01-github-actions-macos-14-runner-image-retirement">https://github.blog/changelog/2026-10-01-github-actions-macos-14-runner-image-retirement</a> — GitHub changelog: macOS 14 runner image retirement
+<sup class="cite">[25]</sup> <a href="https://cua.ai/blog/gpu-passthrough-macos-vms">https://cua.ai/blog/gpu-passthrough-macos-vms</a> — Cua: llama.cpp in macOS VMs, paravirtual GPU capability gap
+<sup class="cite">[26]</sup> <a href="https://developer.apple.com/documentation/paravirtualizedgraphics">https://developer.apple.com/documentation/paravirtualizedgraphics</a> — Apple: ParavirtualizedGraphics framework
+<sup class="cite">[27]</sup> <a href="https://runs-on.com">https://runs-on.com</a> — RunsOn: self-hosted runners in your AWS account
+<sup class="cite">[28]</sup> <a href="https://cirrus-runners.app">https://cirrus-runners.app</a> — Cirrus Runners: fixed-price macOS M4 Pro / Linux GPU runners
+<sup class="cite">[29]</sup> <a href="https://www.scaleway.com/en/mac-mini-m4">https://www.scaleway.com/en/mac-mini-m4</a> — Scaleway: Mac mini M4 as a Service
+<sup class="cite">[30]</sup> <a href="https://namespace.so/docs/architecture/compute/macos">https://namespace.so/docs/architecture/compute/macos</a> — Namespace: macOS compute (M4 Pro / M5 Max)
+<sup class="cite">[31]</sup> <a href="https://namespace.so/pricing">https://namespace.so/pricing</a> — Namespace pricing
+<sup class="cite">[32]</sup> <a href="https://docs.blacksmith.sh/blacksmith-runners/overview">https://docs.blacksmith.sh/blacksmith-runners/overview</a> — Blacksmith runner instance types
+<sup class="cite">[33]</sup> <a href="https://huggingface.co/pricing">https://huggingface.co/pricing</a> — Hugging Face pricing (T4 hardware rates)
+<sup class="cite">[34]</sup> <a href="https://huggingface.co/docs/huggingface_hub/guides/jobs">https://huggingface.co/docs/huggingface_hub/guides/jobs</a> — Hugging Face Jobs guide
+<sup class="cite">[35]</sup> <a href="https://www.thundercompute.com/blog/azure-gpu-instances">https://www.thundercompute.com/blog/azure-gpu-instances</a> — Thunder Compute: Azure GPU instances and prices
+<sup class="cite">[36]</sup> <a href="https://docs.github.com/en/actions/reference/security/secure-use">https://docs.github.com/en/actions/reference/security/secure-use</a> — GitHub Docs: Secure use reference (self-hosted runners and public repos)
+<sup class="cite">[37]</sup> <a href="https://v2.tauri.app/distribute/pipelines/github">https://v2.tauri.app/distribute/pipelines/github</a> — Tauri: GitHub Actions pipeline (tauri-action matrix)
+<sup class="cite">[38]</sup> <a href="https://github.com/tauri-apps/tauri-action">https://github.com/tauri-apps/tauri-action</a> — tauri-apps/tauri-action
+<sup class="cite">[39]</sup> <a href="https://github.com/cirruslabs/tart">https://github.com/cirruslabs/tart</a> — cirruslabs/tart (macOS VMs on Apple silicon)
+<sup class="cite">[40]</sup> <a href="https://www.macstadium.com/pricing">https://www.macstadium.com/pricing</a> — MacStadium pricing (Orka, bare metal)
+<sup class="cite">[41]</sup> <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/install-nvidia-driver.html">https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/install-nvidia-driver.html</a> — AWS docs: NVIDIA drivers for EC2 (incl. Windows)
+<sup class="cite">[42]</sup> <a href="https://v2.tauri.app/distribute/appimage">https://v2.tauri.app/distribute/appimage</a> — Tauri: AppImage (glibc baseline; ARM build constraints)
+<sup class="cite">[43]</sup> <a href="https://v2.tauri.app/develop/tests/webdriver">https://v2.tauri.app/develop/tests/webdriver</a> — Tauri: WebDriver testing (tauri-driver Win/Linux; WebdriverIO embedded for macOS)
+<sup class="cite">[44]</sup> <a href="https://docs.github.com/en/actions/reference/runners/self-hosted-runners">https://docs.github.com/en/actions/reference/runners/self-hosted-runners</a> — GitHub Docs: Self-hosted runners reference (ephemeral runners, auto-update)
+<sup class="cite">[45]</sup> <a href="https://github.blog/changelog/2021-09-20-github-actions-ephemeral-self-hosted-runners-new-webhooks-for-auto-scaling">https://github.blog/changelog/2021-09-20-github-actions-ephemeral-self-hosted-runners-new-webhooks-for-auto-scaling</a> — GitHub changelog: ephemeral (single-job) self-hosted runners
+<sup class="cite">[46]</sup> <a href="https://www.jochendelabie.com/2023/09/20/macos-virtualization-framework">https://www.jochendelabie.com/2023/09/20/macos-virtualization-framework</a> — Virtualization.framework: 2 macOS VMs per Mac (EULA limit)
+<sup class="cite">[47]</sup> <a href="https://tart.run/faq">https://tart.run/faq</a> — Tart FAQ (Virtualization.framework limits)</p>
+</body>
+</html>

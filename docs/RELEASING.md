@@ -7,7 +7,7 @@ needs a machine of ours.
 
 | Channel | When | Where | Who can download |
 |---|---|---|---|
-| **PR builds** | every pull request | the run's **Artifacts** (kept 14 days, best effort: GitHub refuses them while the org's artifact storage is full) and Current AI's S3 artifact bucket | repo members; S3 needs AWS access |
+| **PR builds** | every pull request | the run's **Artifacts** (kept 14 days, best effort: GitHub refuses them while the org's artifact storage is full) | repo members |
 | **Nightly** | daily at 04:00 UTC, when `main` has moved | a **prerelease per nightly**, plus the rolling **`nightly` prerelease** | anyone who can see the repo |
 | **Release** | a `v<version>` tag | a **draft** release, published by a person | after Publish |
 
@@ -84,7 +84,7 @@ build's glibc floor.
 
 ## Turning on Windows and macOS (local first)
 
-A disabled target costs nothing: it is never built on PRs, nightlies or tags. Prove it locally,
+A disabled target is never built on PRs, nightlies or tags. Prove it locally,
 then flip it on.
 
 1. **Build it on a real machine of that OS**, the same way CI will:
