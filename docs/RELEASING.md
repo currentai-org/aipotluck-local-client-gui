@@ -66,10 +66,8 @@ The two macOS builds are for different Macs: `macos-arm64` for Apple silicon (M1
 much slower; the app shows a banner saying so. CI checks each `.app` (`tools/check-macos-arch.sh`)
 holds only its own architecture, and the release notes say which download to pick.
 
-Windows ships the NSIS installer only. The MSI (`nsis,msi`) has never been built: WiX's `light.exe`
-needs the Windows Installer service, and an earlier test showed the Windows build couldn't reach
-it. Try it with one `only: windows-x64` dispatch before adding it, since a failing MSI
-step would fail every nightly.
+Windows ships the NSIS installer only. The MSI (`nsis,msi`) has never been built. Try it with one
+`only: windows-x64` dispatch before adding it, since a failing MSI step would fail every nightly.
 
 There are no CUDA or Metal builds of the GUI. The GUI contains no GPU code. The bundled CLI
 downloads the right llama.cpp build (CPU, CUDA, Vulkan or ROCm; Metal is built into the macOS
