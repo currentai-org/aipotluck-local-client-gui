@@ -2,7 +2,7 @@
 
 A desktop app that turns this computer into a local inference server for
 [aipotluck.org](https://aipotluck.org) in two clicks. It's a window on
-[`aitpotluck-local-client`](https://github.com/currentai-org/aitpotluck-local-client): the app
+[`aipotluck-local-client`](https://github.com/currentai-org/aipotluck-local-client): the app
 bundles that CLI's own code and a Python to run it with, so the llama.cpp and newt binaries, their
 pins and checksums, the background service, and the pairing are exactly the CLI's.
 
@@ -47,7 +47,7 @@ any target the way CI does:
 ## Layout
 
 ```
-upstream/aitpotluck-local-client/  git submodule: the CLI, pinned (the only upstream the app ships)
+upstream/aipotluck-local-client/  git submodule: the CLI, pinned (the only upstream the app ships)
 runtime/python_version.json        pinned python-build-standalone + sha256s
 sidecar/gui_probe.py               read-only state probe, runs on upstream's own layout code
 src-tauri/                         Rust shell: runtime unpack, upstream runner, service proxy, pairing

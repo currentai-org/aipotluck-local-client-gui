@@ -4,13 +4,13 @@ Guidance for coding agents and contributors working in this repository. `AGENTS.
 this file, so Claude Code and Codex read the same text and cannot drift apart. Edit here, never
 there.
 
-Conventions are adopted from the upstream CLI (`currentai-org/aitpotluck-local-client`, its
+Conventions are adopted from the upstream CLI (`currentai-org/aipotluck-local-client`, its
 `CLAUDE.md`) and its sibling port `aipotluck-local-client-android`. Where they differ, the CLI wins:
 this app *is* the CLI with a window on it.
 
 ## Project overview
 
-A cross-platform desktop GUI for `aitpotluck-local-client`. Two goals, in priority order:
+A cross-platform desktop GUI for `aipotluck-local-client`. Two goals, in priority order:
 1. **Minimal user friction.** Download, install, one click to set up, one click to pair. No
    terminal, no prerequisites, no keypresses beyond an optional paste.
 2. **Behave identically to the CLI.** A device set up from this app and one set up from the CLI
@@ -31,7 +31,7 @@ local toolchain.
   newt, verifying checksums, writing `runtime.json`, and registering the OS service are all
   upstream's job. If the GUI needs something upstream can't do, the fix goes upstream (as a
   proposal; see below), not here.
-- **The upstream pin is the submodule commit**, `upstream/aitpotluck-local-client`. llama.cpp and
+- **The upstream pin is the submodule commit**, `upstream/aipotluck-local-client`. llama.cpp and
   newt versions come from *that* commit's `llama_version.json`/`newt_version.json`, so they move in
   lockstep with the CLI by construction. Bump the pin only through `tools/sync_upstream.sh
   --prepare-bump` (or by hand with the same checks), never as a side effect of another change.
@@ -41,7 +41,7 @@ local toolchain.
   successful pair.
 - **No inbound-network requirement, and no new localhost write API.** The webview reaches the
   service only through the Rust allow-list in `src-tauri/src/service.rs`.
-- **Read-only upstreams.** `currentai-org/aitpotluck-local-client` and
+- **Read-only upstreams.** `currentai-org/aipotluck-local-client` and
   `currentai-org/aipotluck.org` are references. Never commit to, push to, or run a writing git
   command in a local checkout of either.
   The submodule here may be fetched and checked out, nothing more.

@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-UPSTREAM = ROOT / "upstream" / "aitpotluck-local-client"
+UPSTREAM = ROOT / "upstream" / "aipotluck-local-client"
 TARGETS = json.loads((ROOT / ".github" / "build-targets.json").read_text())["targets"]
 TOOL = ROOT / "tools" / "release_version.py"
 

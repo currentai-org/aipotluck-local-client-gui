@@ -22,7 +22,7 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="release.sh is r
 
 ROOT = Path(__file__).resolve().parents[1]
 FILES = ["src-tauri/tauri.conf.json", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock", "ui/package.json"]
-SUB = "upstream/aitpotluck-local-client"
+SUB = "upstream/aipotluck-local-client"
 
 
 def git(cwd: Path, *args: str) -> str:

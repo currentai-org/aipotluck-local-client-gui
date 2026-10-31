@@ -506,9 +506,9 @@ fallback. Leave the Pi and the PC out unless GitHub minutes become a real constr
 [3] https://linear.app/currentai-org/issue/CUR-1534/ci-minutes-not-correctness-are-what-keeps-gates-off-prs-an-ephemeral — CUR-1534: ephemeral self-hosted runner on spot (cost analysis, billing observations)
 [4] https://linear.app/currentai-org/issue/SOL-102/the-accounts-32-vcpu-spot-quota-sends-most-ci-runners-to-on-demand-at — SOL-102: 32-vCPU spot quota in the AWS account
 [5] https://linear.app/currentai-org/issue/CUR-1963/build-test-architecture-support-for-various-local-inference-server — CUR-1963: Build + test architecture support for local inference targets
-[6] https://github.com/currentai-org/aitpotluck-local-client/blob/main/llama_version.json — aitpotluck-local-client llama_version.json (pinned b10989 assets)
-[7] https://github.com/currentai-org/aitpotluck-local-client/blob/main/aipotluck/installer/platform_detect.py — aitpotluck-local-client platform_detect.py (backend detection)
-[8] https://github.com/currentai-org/aitpotluck-local-client/blob/main/newt_version.json — aitpotluck-local-client newt_version.json (UNVERIFIED mac/win checksums)
+[6] https://github.com/currentai-org/aipotluck-local-client/blob/main/llama_version.json — aipotluck-local-client llama_version.json (pinned b10989 assets)
+[7] https://github.com/currentai-org/aipotluck-local-client/blob/main/aipotluck/installer/platform_detect.py — aipotluck-local-client platform_detect.py (backend detection)
+[8] https://github.com/currentai-org/aipotluck-local-client/blob/main/newt_version.json — aipotluck-local-client newt_version.json (UNVERIFIED mac/win checksums)
 [9] https://docs.github.com/en/actions/reference/runners/github-hosted-runners — GitHub Docs: GitHub-hosted runners reference
 [10] https://docs.github.com/en/actions/reference/runners/larger-runners — GitHub Docs: Larger runners reference (incl. GPU T4)
 [11] https://docs.github.com/en/billing/reference/actions-runner-pricing — GitHub Docs: Actions runner pricing

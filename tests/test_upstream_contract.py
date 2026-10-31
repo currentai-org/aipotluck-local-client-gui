@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-UPSTREAM = Path(os.environ.get("AIPOTLUCK_UPSTREAM_DIR") or ROOT / "upstream" / "aitpotluck-local-client")
+UPSTREAM = Path(os.environ.get("AIPOTLUCK_UPSTREAM_DIR") or ROOT / "upstream" / "aipotluck-local-client")
 PROBE = ROOT / "sidecar" / "gui_probe.py"
 PLAN = ROOT / "sidecar" / "gui_plan.py"
 

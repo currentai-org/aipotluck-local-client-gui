@@ -4,7 +4,7 @@
 3 done (8e31548, byte progress in the pull job), 4 fixed (f4560eb, the secret goes to newt
 through its environment). 2 (the misleading `delete_failed` wording) is still open.
 
-Found while building the GUI's models screen against `currentai-org/aitpotluck-local-client` at
+Found while building the GUI's models screen against `currentai-org/aipotluck-local-client` at
 `2ac2591` (also `origin/main` on that date). Per this repo's rules the fixes belong upstream; none
 of these has been filed. Each was reproduced on a throwaway install, not a real one.
 

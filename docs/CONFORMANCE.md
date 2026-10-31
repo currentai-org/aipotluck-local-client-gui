@@ -1,4 +1,4 @@
-# Staying in step with aitpotluck-local-client
+# Staying in step with aipotluck-local-client
 
 This app runs the upstream CLI's own code, so "staying in sync" isn't porting changes. It means
 noticing when upstream moves, proving the GUI still works against the new commit, then bumping the

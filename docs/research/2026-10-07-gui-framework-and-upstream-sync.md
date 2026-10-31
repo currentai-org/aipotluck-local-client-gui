@@ -11,7 +11,7 @@ Date: 2026-10-07 · Status: proposal, nothing implemented
 
 ## 0. TL;DR
 
-- **Don't re-implement the CLI. Embed it.** The GUI ships the upstream `aitpotluck-local-client`
+- **Don't re-implement the CLI. Embed it.** The GUI ships the upstream `aipotluck-local-client`
   Python package unchanged (git submodule pinned to an exact commit) plus a bundled standalone
   Python. It calls the same `install.py` and `cli.py` code paths and talks to the same local service
   on `127.0.0.1:8069`. That gives the same llama.cpp and newt binaries, the same pins and checksums
@@ -35,7 +35,7 @@ Date: 2026-10-07 · Status: proposal, nothing implemented
 
 ## 1. What the upstream project actually is (as of `origin/main` 2ac2591, 2026-10-06)
 
-Source: a fetched checkout of `aitpotluck-local-client` (local `main` was 20 commits behind origin; untouched).
+Source: a fetched checkout of `aipotluck-local-client` (local `main` was 20 commits behind origin; untouched).
 
 - **Pure-stdlib Python ≥3.9, `dependencies = []`.** It has no build step and no pip install. Optional
   `pywin32` is needed only for the Windows `--system` service.
@@ -211,7 +211,7 @@ figures are python-build-standalone `cpython-3.12.15` `install_only_stripped` ta
 
 ```
 aipotluck-local-client-gui/
-  upstream/aitpotluck-local-client/   git submodule, pinned commit (THE CLI, unmodified)
+  upstream/aipotluck-local-client/   git submodule, pinned commit (THE CLI, unmodified)
   runtime/python.lock.json            python-build-standalone tag + per-target sha256 (same pin style as llama_version.json)
   src-tauri/                          Rust: window, tray, single-instance, deep-link, sidecar spawn, update
   ui/                                 Svelte app; imports design/tokens.css
@@ -260,7 +260,7 @@ contents, and clear the clipboard after a successful pair (optional, needs a dec
 This follows `upstream-conformance-harness` and the Android repo's working version of it.
 
 ### 5.1 Pin
-- `upstream/aitpotluck-local-client` is a git submodule. The commit pinned there is the
+- `upstream/aipotluck-local-client` is a git submodule. The commit pinned there is the
   **only** upstream the app ships, and it is bumped by a reviewable commit
   (`chore(upstream): bump to <sha> — <summary>`).
 - llama.cpp and newt pins come from that submodule's JSON files, so the GUI is in lockstep with the
@@ -375,7 +375,7 @@ This follows `upstream-conformance-harness` and the Android repo's working versi
    test per OS.
 
 ## References
-- Upstream CLI: github.com/currentai-org/aitpotluck-local-client (`README.md`, `ARCHITECTURE.md`, `CLAUDE.md`, `aipotluck/service/runner.py`, `aipotluck/installer/cli.py`)
+- Upstream CLI: github.com/currentai-org/aipotluck-local-client (`README.md`, `ARCHITECTURE.md`, `CLAUDE.md`, `aipotluck/service/runner.py`, `aipotluck/installer/cli.py`)
 - Android port precedent: `aipotluck-local-client-android` (`docs/CONFORMANCE.md`, `tools/check_upstream.sh`, `tools/conformance/`, `tools/design/sync-alpha.py`, `docs/guides/upstream-conventions.md`)
 - Design system: aipotluck.org's `web/src/lib/alpha-ds/README.md`, web/src/lib/chat/design-system.md, route `/designsystem`
 - Tauri sidecars: https://v2.tauri.app/develop/sidecar/

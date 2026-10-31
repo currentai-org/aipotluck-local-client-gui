@@ -16,7 +16,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SUB="$ROOT/upstream/aitpotluck-local-client"
+SUB="$ROOT/upstream/aipotluck-local-client"
 WORK="$ROOT/build/sync"
 REF="origin/main"
 OFFLINE=0 PREPARE=0 QUIET=0
@@ -44,11 +44,11 @@ if [ "$OFFLINE" -eq 0 ]; then
   git -C "$SUB" fetch --quiet origin 2>"$WORK.fetch.err" || {
     mkdir -p "$WORK"; echo "could not fetch upstream: $(cat "$WORK.fetch.err" 2>/dev/null)" >&2; exit 2; }
 fi
-PINNED="$(git -C "$ROOT" ls-tree HEAD upstream/aitpotluck-local-client | awk '{print $3}')"
+PINNED="$(git -C "$ROOT" ls-tree HEAD upstream/aipotluck-local-client | awk '{print $3}')"
 [ -n "$PINNED" ] || PINNED="$(git -C "$SUB" rev-parse HEAD)"
 CANDIDATE="$(git -C "$SUB" rev-parse --verify --quiet "$REF^{commit}")" || { echo "unknown upstream ref: $REF" >&2; exit 2; }
 
-say "aitpotluck-local-client: pinned ${PINNED:0:9}, candidate $REF = ${CANDIDATE:0:9}"
+say "aipotluck-local-client: pinned ${PINNED:0:9}, candidate $REF = ${CANDIDATE:0:9}"
 if [ "$PINNED" = "$CANDIDATE" ]; then
   say "In sync -- nothing new upstream."
   finish 0
@@ -109,12 +109,12 @@ if [ "$PREPARE" -eq 1 ]; then
     BUMP="$WORK/bump-wt"
     rm -rf "$BUMP"; git -C "$ROOT" worktree prune
     git -C "$ROOT" worktree add --quiet -b "$BR" "$BUMP" HEAD
-    git -C "$BUMP/upstream/aitpotluck-local-client" checkout --quiet "$CANDIDATE" 2>/dev/null \
-      || { git -C "$BUMP" submodule update --init --quiet upstream/aitpotluck-local-client && \
-           git -C "$BUMP/upstream/aitpotluck-local-client" checkout --quiet "$CANDIDATE"; }
+    git -C "$BUMP/upstream/aipotluck-local-client" checkout --quiet "$CANDIDATE" 2>/dev/null \
+      || { git -C "$BUMP" submodule update --init --quiet upstream/aipotluck-local-client && \
+           git -C "$BUMP/upstream/aipotluck-local-client" checkout --quiet "$CANDIDATE"; }
     cp "$WORK/candidate-surface.json" "$BUMP/conformance/upstream-surface.json"
-    git -C "$BUMP" add upstream/aitpotluck-local-client conformance/upstream-surface.json
-    git -C "$BUMP" commit --quiet -m "chore(upstream): bump aitpotluck-local-client to ${CANDIDATE:0:9}" \
+    git -C "$BUMP" add upstream/aipotluck-local-client conformance/upstream-surface.json
+    git -C "$BUMP" commit --quiet -m "chore(upstream): bump aipotluck-local-client to ${CANDIDATE:0:9}" \
       -m "Prepared by tools/sync_upstream.sh: surface classified, upstream tests and GUI contract tests green against ${CANDIDATE:0:9}. Not yet verified on a real install -- run the manual smoke test before merging." \
       -m "$(git -C "$SUB" log --oneline --no-decorate "$PINNED..$CANDIDATE")"
     git -C "$ROOT" worktree remove --force "$BUMP"

@@ -804,7 +804,7 @@
     ]
   },
   "source_commit": "21067d73e05d75d29e08bf3cec3cecfa32dac1a8",
-  "source_repo": "aitpotluck-local-client",
+  "source_repo": "aipotluck-local-client",
   "source_subject": "feat(installer): put the CLI on the user's PATH on Linux and macOS too",
   "tunnel": {
     "argv": [
