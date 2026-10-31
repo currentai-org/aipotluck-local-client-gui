@@ -1,6 +1,7 @@
 # Building locally (Linux: Debian / Ubuntu; macOS)
 
-Local builds are the primary path. CI (GitHub Actions) comes later and will run these same steps.
+Local builds are the primary path, and CI runs these same steps on GitHub Actions
+(`tools/build.sh` per target, inside `.github/workflows/build.yml`).
 
 ## 1. System packages (root, once per machine/image)
 

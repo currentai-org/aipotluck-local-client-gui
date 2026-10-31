@@ -16,7 +16,7 @@ A cross-platform desktop GUI for `aitpotluck-local-client`. Two goals, in priori
 2. **Behave identically to the CLI.** A device set up from this app and one set up from the CLI
    must be indistinguishable on disk, to the OS, and to aipotluck.org.
 
-Linux (Debian/Ubuntu) is the first tested platform; macOS and Windows follow.
+Linux (Debian/Ubuntu), macOS and Windows are all built and released from CI today.
 
 Read `ARCHITECTURE.md` before structural changes, `docs/CONFORMANCE.md` before touching anything
 that talks to upstream, and `docs/DESIGN-SYSTEM.md` before UI work. `docs/BUILDING.md` covers the
@@ -99,11 +99,12 @@ Gate: `tools/check.sh` runs:
 - the conformance check (no drift, every upstream item classified).
 
 GitHub Actions runs the same gate (`.github/workflows/check.yml`) on every PR and push to `main`.
-`build.yml` builds installers for every *enabled* target in `.github/build-targets.json` (Linux and
-macOS today) on every PR, publishes the rolling `nightly` prerelease on every push to `main`, and makes a
-draft release on a `v*.*.*` tag (docs/RELEASING.md). A PR whose installers don't build isn't
-mergeable, the same as a red `check.sh`. A disabled target (Windows today) is enabled only after
-`tools/build.sh --release-target <t>` has produced a working installer on a real machine of that OS.
+`build.yml` builds installers for every enabled target in `.github/build-targets.json` (all five
+today) on every PR, publishes the nightly prereleases on a daily schedule, and makes a draft release
+on a `v*.*.*` tag (docs/RELEASING.md, docs/ENABLING-CI.md). A PR whose installers don't build isn't
+mergeable, the same as a red `check.sh`. A target is enabled only after
+`tools/build.sh --release-target <t>` has produced a working installer on a real machine of that OS;
+`tests/test_build_targets.py` enforces that.
 
 ## Runtime parameters are upstream's
 
