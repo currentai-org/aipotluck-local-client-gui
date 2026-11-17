@@ -750,7 +750,11 @@ fn uninstall_app(app: AppHandle, remove_cli: bool, remove_models: bool) -> Resul
         let mut candidates = app_dirs(&app);
         // This app's own preferences file lives beside the runtime, inside upstream's install root,
         // so it is never upstream's to remove: it goes with the app whichever boxes were ticked.
-        candidates.push(settings::path());
+        // It is named to the cleanup as this app's own exact path -- never by name -- so a file of
+        // the user's that happens to be called the same is still refused (uninstall::safe_to_delete).
+        let settings_file = settings::path();
+        candidates.push(settings_file.clone());
+        let own = vec![settings_file];
         // With the CLI gone too, nothing runs from the bundled copy of upstream any more (the
         // service ran from the CLI home, and upstream's uninstall removes that): both go with the
         // app. With the CLI kept, the runtime goes only once the kept CLI no longer runs from it.
@@ -774,9 +778,19 @@ fn uninstall_app(app: AppHandle, remove_cli: bool, remove_models: bool) -> Resul
                 },
             );
         }
+        // Upstream's uninstall deletes its own subdirectories of the install root but leaves the
+        // app's files in it, which is what left `~/.local/share/aipotluck` non-empty after an
+        // uninstall on the Pi. Once the app's files are gone too, the root is empty and is pruned
+        // -- but only when the CLI went with it: with the CLI kept, `<data_home>/aipotluck/cli/`
+        // is still in there, so the root is upstream's to keep and is never pruned. Nothing under
+        // `cli/` is ever deleted. (rmdir refuses a non-empty directory anyway; saying it here makes
+        // the intent explicit rather than incidental.)
+        let prune = remove_cli.then(|| paths::data_home().join("aipotluck"));
         let identifier = app.config().identifier.clone();
-        let doomed = uninstall::plan(candidates, &paths::home(), &identifier, &install);
-        match uninstall::cleanup_command(std::process::id(), &install, &doomed).spawn() {
+        let doomed = uninstall::plan(candidates, &paths::home(), &identifier, &install, &own);
+        match uninstall::cleanup_command(std::process::id(), &install, &doomed, prune.as_deref())
+            .spawn()
+        {
             Ok(_) => {
                 let _ = app.emit(
                     "task-done",
