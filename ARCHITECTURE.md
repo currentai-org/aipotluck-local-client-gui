@@ -109,6 +109,16 @@ the shared copy is looked for, as `AIPOTLUCK_GUI_RUNTIME_DIR` does for the bundl
 
 ## Flows
 
+- **Launch.** The app unpacks its runtime, then offers that bundled CLI to the machine's shared
+  copy before the UI can act on anything: `installer.adopt --if-installed --installed-by=gui
+  --bundled-python-dir=<bundled interpreter dir>`, run from the bundled tree with the bundled
+  interpreter. Upstream stages it only when its source commit is strictly newer than what is
+  installed (so the GUI and the CLI never downgrade each other), re-points the shared copy's shim
+  and service at it, and restarts the service only if it was running and something actually
+  changed. Before the first Set up it does nothing at all ("skipped") — opening the app never
+  creates a CLI home or a shim nobody asked for. It prints one `ADOPT_RESULT <json>` line, which
+  becomes `app_state.cli_adopt` (and one `cli adopt:` line in the app's stderr log); a failure
+  there is reported in that field, never as a failed launch.
 - **Plan.** Before Set up, the screen lists what will be installed (client, llama.cpp, newt, model)
   with approximate sizes. `gui_plan.py` asks upstream's own code which llama.cpp build and newt
   binary this host gets and which model is the default, sizes the model with upstream's
