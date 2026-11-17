@@ -12,7 +12,7 @@ mod service;
 mod settings;
 mod uninstall;
 
-use runtime::Runtime;
+use runtime::{Runtime, UpstreamCopy};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::process::Child;
@@ -187,10 +187,12 @@ fn release(app: &AppHandle) {
 }
 
 /// Run an upstream module in the background, streaming its output to the UI as `task-log` events
-/// and finishing with one `task-done` event.
+/// and finishing with one `task-done` event. `copy` says whether that module runs from the shared
+/// CLI copy the installers stage, or from the one bundled with this app.
 fn spawn_task(
     app: AppHandle,
     task: &'static str,
+    copy: UpstreamCopy,
     module: &'static str,
     args: Vec<String>,
     after: impl FnOnce(&AppHandle, i32) + Send + 'static,
@@ -203,6 +205,7 @@ fn spawn_task(
         let pid_app = app.clone();
         let code = rt
             .run_module_streaming(
+                copy,
                 module,
                 &args,
                 move |pid| *pid_app.state::<AppState>().task_pid.lock().unwrap() = Some(pid),
@@ -309,6 +312,11 @@ async fn setup_device(
     let model = checked_model(model_hf)?;
     let backend = checked_backend(backend)?;
     let rt = rt(&state)?;
+    // Set up runs the *bundled* installer -- it is the one this app shipped and knows the flags of
+    // -- and hands it what it needs to stage the shared copy: our interpreter (so the CLI's
+    // staged copy runs the same Python) and who is installing. Upstream's installer then hands
+    // over to a newer installed copy itself, so a stale bundle never downgrades a newer CLI.
+    let python_dir = rt.python_dir.clone();
     let probe = tauri::async_runtime::spawn_blocking(move || rt.probe())
         .await
         .map_err(|e| e.to_string())??;
@@ -330,9 +338,14 @@ async fn setup_device(
     if !probe["service_manager_usable"].as_bool().unwrap_or(true) {
         args.push("--no-start".into());
     }
+    // Into the shared CLI home: which installer staged it, and which interpreter to copy in there
+    // so the installed CLI (and the service running from it) outlives this app's bundle.
+    args.push("--installed-by=gui".into());
+    args.push(format!("--bundled-python-dir={}", python_dir.display()));
     spawn_task(
         app,
         "setup",
+        UpstreamCopy::Bundled,
         "aipotluck.installer.install",
         args,
         |app, code| {
@@ -374,11 +387,18 @@ fn pair_one_click(app: AppHandle) -> Result<(), String> {
         // One token, so the value can never be read as a flag of its own.
         args.push(format!("--server-url={url}"));
     }
-    spawn_task(app, "pair", "aipotluck.installer.cli", args, |app, code| {
-        if code == 0 {
-            restart_hosted_if_needed(app);
-        }
-    })
+    spawn_task(
+        app,
+        "pair",
+        UpstreamCopy::Installed,
+        "aipotluck.installer.cli",
+        args,
+        |app, code| {
+            if code == 0 {
+                restart_hosted_if_needed(app);
+            }
+        },
+    )
 }
 
 /// Stop a one-click pairing that is still waiting for the browser. Upstream treats SIGINT as the
@@ -502,6 +522,7 @@ fn pair(app: AppHandle, pasted: Option<String>) -> Result<(), String> {
     spawn_task(
         app,
         "pair",
+        UpstreamCopy::Installed,
         "aipotluck.installer.cli",
         args,
         move |app, code| {
@@ -527,6 +548,7 @@ fn unpair(app: AppHandle) -> Result<(), String> {
     spawn_task(
         app,
         "unpair",
+        UpstreamCopy::Installed,
         "aipotluck.installer.cli",
         vec!["logout".into()],
         |app, code| {
@@ -626,6 +648,7 @@ fn uninstall_app(app: AppHandle, remove_cli: bool, remove_models: bool) -> Resul
         let emit_app = app.clone();
         let code = if run_cli {
             rt.run_module_streaming(
+                UpstreamCopy::Installed,
                 "aipotluck.installer.cli",
                 &args,
                 |_| {},
@@ -669,7 +692,9 @@ fn uninstall_app(app: AppHandle, remove_cli: bool, remove_models: bool) -> Resul
         let install =
             uninstall::AppInstall::detect(&exe, std::env::var_os("APPIMAGE").map(Into::into));
         let mut candidates = app_dirs(&app);
-        // A kept CLI's service runs from the bundled interpreter and source: they stay with it.
+        // With the CLI gone too, nothing runs from the bundled copy of upstream any more (the
+        // service ran from the CLI home, and upstream's uninstall removes that): both go with the
+        // app. Keeping the CLI (models-only) leaves both alone.
         if remove_cli {
             candidates.push(paths::runtime_root());
         }

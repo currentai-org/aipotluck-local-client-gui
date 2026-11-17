@@ -89,6 +89,24 @@ Why Python is bundled: upstream is stdlib-only (`dependencies = []`, requires â‰
 Windows and some minimal Linux installs have no suitable `python3`. A pinned interpreter also means
 the one we test (`tools/bundled-python.sh`) is the one users run.
 
+### Which copy of upstream runs what
+
+The machine can hold two copies of upstream's code: this app's bundled one (`gui-runtime/`, above)
+and the shared CLI copy at `<data_home>/aipotluck/cli/`, which is the one copy both installers stage
+into and which upstream's `cli_home` describes in `current.json` (a copy is only replaced by a
+strictly newer source commit, so neither installer can downgrade the other). Set up runs the
+*bundled* `aipotluck.installer.install`, with `--installed-by=gui` and
+`--bundled-python-dir=<bundled interpreter dir>` so upstream stages its own shared copy and takes a
+working interpreter with it; everything else that acts on the machine -- `cli login` (both pairing
+paths), `cli logout`, `cli uninstall`, and the service payload the GUI hosts on hosts with no
+service manager -- runs the *installed* copy when `current.json` names one that is still usable
+(schema 1, the interpreter a file, the source tree a directory), and falls back to the bundled copy
+otherwise. That is what keeps the GUI and the `aipotluck-local-client` command from disagreeing
+about the version installed: whichever side upgrades, both run it next. The sidecars (`gui_probe.py`,
+`gui_plan.py`, `gui_server.py`) always run the bundled copy, because they import upstream's Python
+API directly and are pinned to the commit they shipped with. `AIPOTLUCK_CLI_HOME` overrides where
+the shared copy is looked for, as `AIPOTLUCK_GUI_RUNTIME_DIR` does for the bundle.
+
 ## Flows
 
 - **Plan.** Before Set up, the screen lists what will be installed (client, llama.cpp, newt, model)

@@ -38,6 +38,16 @@ pub fn runtime_root() -> PathBuf {
     data_home().join("aipotluck").join("gui-runtime")
 }
 
+/// `<data_home>/aipotluck/cli` -- the one copy of the CLI the machine has, staged there by
+/// whichever installer ran last (`aipotluck.installer.cli_home`), with `current.json` saying which
+/// source tree and interpreter it uses. Beside upstream's own `llama.cpp/` and our `gui-runtime/`.
+pub fn cli_home() -> PathBuf {
+    if let Some(v) = std::env::var_os("AIPOTLUCK_CLI_HOME") {
+        return PathBuf::from(v);
+    }
+    data_home().join("aipotluck").join("cli")
+}
+
 pub fn python_dir(root: &Path, python_tag: &str) -> PathBuf {
     root.join(format!("python-{python_tag}"))
 }
