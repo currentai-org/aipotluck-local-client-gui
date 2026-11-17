@@ -19,6 +19,11 @@
 	let value = $state('');
 	let error = $state<string | null>(null);
 	let saving = $state(false);
+	// True once the field has been edited. The panel opens before upstream's answer arrives, and
+	// writing `value` after a keystroke re-renders the input under the typist: on a slow host the
+	// keystrokes still in flight are dropped and the field ends up holding a fragment of what was
+	// typed (seen as an empty or truncated URL). What someone typed always wins over the load.
+	let typed = false;
 
 	function hostOf(url: string): string {
 		try {
@@ -31,9 +36,11 @@
 	async function show() {
 		open = true;
 		error = null;
+		value = '';
+		typed = false;
 		try {
 			info = await api.pairingServer();
-			value = info.override ?? '';
+			if (!typed) value = info.override ?? '';
 		} catch (e) {
 			error = String(e);
 		}
@@ -87,7 +94,10 @@
 				placeholder={info?.default ?? 'https://www.aipotluck.org'}
 				aria-label="Pairing server URL"
 				bind:value
-				oninput={() => (error = null)}
+				oninput={() => {
+					typed = true;
+					error = null;
+				}}
 				aria-invalid={!!error}
 				autocomplete="off"
 				spellcheck="false"
