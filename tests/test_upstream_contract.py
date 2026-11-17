@@ -183,6 +183,33 @@ def test_logout_via_upstream_cli_clears_pairing_the_way_unpair_expects(home: Pat
     assert _layout(home)["logged_in"] is False
 
 
+def _install_root(home: Path) -> Path:
+    """Per-user install root (<install_root>/cli is the CLI home), written out independently here
+    the same way _cfg is (aipotluck/installer/layout.py)."""
+    if sys.platform == "darwin":
+        return home / "Library" / "Application Support" / "aipotluck"
+    if sys.platform == "win32":
+        return home / "AppData" / "Local" / "aipotluck"
+    return home / ".local" / "share" / "aipotluck"
+
+
+def test_adopt_on_a_fresh_machine_is_skipped_and_reports_in_the_line_the_gui_parses(home: Path):
+    """runtime.rs runs `installer.adopt --if-installed --installed-by=gui` before every launch and
+    reads the last stdout line as `ADOPT_RESULT <json>`. On a machine where this user never
+    installed anything it must adopt nothing -- no CLI home, no shim, no runtime.json -- and say
+    so, rather than staging the GUI's bundled tree as an install nobody asked for."""
+    result = subprocess.run(
+        [sys.executable, "-m", "aipotluck.installer.adopt", "--if-installed", "--installed-by=gui"],
+        cwd=UPSTREAM, env=_env(home), capture_output=True, text=True, timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    last = result.stdout.strip().splitlines()[-1]
+    assert last.startswith("ADOPT_RESULT "), result.stdout
+    assert json.loads(last[len("ADOPT_RESULT "):])["action"] == "skipped"
+    assert not (_install_root(home) / "cli").exists()
+    assert _layout(home)["installed"] is False
+
+
 @pytest.fixture
 def hosted_service(home: Path):
     """Upstream's service payload, started with the argv runtime.rs spawn_service uses."""
