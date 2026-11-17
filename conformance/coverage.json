@@ -30,6 +30,10 @@
       "status": "not_applicable",
       "note": "Advanced/developer install option; GUI v1 takes upstream's default. The CLI shim upstream installs alongside remains available for these."
     },
+    "cli.install_flags.--bundled-python-dir": {
+      "status": "implemented",
+      "note": "Set up passes both, CUR-4337"
+    },
     "cli.install_flags.--gpu-layers": {
       "status": "not_applicable",
       "note": "Advanced/developer install option; GUI v1 takes upstream's default. The CLI shim upstream installs alongside remains available for these."
@@ -37,6 +41,10 @@
     "cli.install_flags.--install-dir": {
       "status": "not_applicable",
       "note": "Advanced/developer install option; GUI v1 takes upstream's default. The CLI shim upstream installs alongside remains available for these."
+    },
+    "cli.install_flags.--installed-by": {
+      "status": "implemented",
+      "note": "Set up passes both, CUR-4337"
     },
     "cli.install_flags.--jobs": {
       "status": "not_applicable",
