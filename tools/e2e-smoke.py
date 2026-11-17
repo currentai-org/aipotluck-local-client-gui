@@ -120,7 +120,7 @@ class WD:
     def __init__(self, base: str):
         self.base, self.sid = base, None
 
-    def _req(self, method: str, path: str, body=None, timeout=60):
+    def _req(self, method: str, path: str, body=None, timeout=120):
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(self.base + path, data=data, method=method,
                                      headers={"Content-Type": "application/json"})
@@ -131,7 +131,10 @@ class WD:
             raise RuntimeError(f"{method} {path}: {e.code} {e.read()[:400]!r}") from None
 
     def start(self, app: str):
-        v = self._req("POST", "/session", {"capabilities": {"alwaysMatch": {"tauri:options": {"application": app}}}}, timeout=120)
+        # Starting the app is the slowest thing here on a loaded host: the first run unpacks the
+        # ~130 MB runtime into the throwaway HOME before the window can be driven at all, and 120s
+        # was not enough with another build on the same machine.
+        v = self._req("POST", "/session", {"capabilities": {"alwaysMatch": {"tauri:options": {"application": app}}}}, timeout=300)
         self.sid = v["sessionId"]
 
     def s(self, path):
@@ -167,6 +170,21 @@ class WD:
         ok = self.js("const e = document.querySelector(arguments[0]); if (!e || e.disabled) return false; e.click(); return true;", css)
         if not ok:
             raise AssertionError(f"nothing enabled matches {css!r}; page:\n{self.text()}")
+
+    def click_css_when_enabled(self, css: str, timeout: float = 120):
+        """For a control a value binding enables: wait for it to enable, then click."""
+        end = time.time() + timeout
+        while True:
+            try:
+                return self.click_css(css)
+            except AssertionError:
+                if time.time() > end:
+                    raise
+                time.sleep(0.5)
+
+    def value_of(self, css: str):
+        """The live value of a field, as the page holds it now."""
+        return self.js("const e = document.querySelector(arguments[0]); return e ? e.value : null;", css)
 
     def type_into(self, css: str, value: str, clear: bool = False):
         el = self._req("POST", self.s("/element"), {"using": "css selector", "value": css})
@@ -231,6 +249,13 @@ def main() -> int:
     # test-only variables (src-tauri/src/service.rs TEST_PORT_ENV).
     env["AIPOTLUCK_GUI_TEST_SERVICE_PORT"] = str(free_port())
     env["AIPOTLUCK_GUI_TEST_LLAMA_PORT"] = str(free_port())
+    # The service the GUI hosts itself (a container or a WSL box without systemd), which is what the
+    # steps below check for. On a machine that does have a systemd user session the app would
+    # otherwise register an OS service and this run would check different things depending on how
+    # fast systemd answered -- it was 12ms on the smoke host, but 5s wasn't enough for it under load
+    # once, and the app then hosted instead. Pinned, so every host runs the same steps (the OS
+    # service is verified by a real install; see docs/BUILDING.md).
+    env["AIPOTLUCK_GUI_TEST_NO_SERVICE_MANAGER"] = "1"
     env.pop("WAYLAND_DISPLAY", None)  # the app must come up on the X display chosen below
     env.pop("AIPOTLUCK_SERVER_URL", None)  # only the GUI's own override may pick the server
     env["BROWSER"] = "true"  # upstream's webbrowser.open "succeeds" without launching anything
@@ -338,15 +363,22 @@ def main() -> int:
                       "return b ? [b.innerText.trim(), getComputedStyle(b).opacity] : null")
         assert quiet and quiet[0] == "" and float(quiet[1]) < 1, f"override control is not subtle: {quiet}"
         wd.click_css('footer button[aria-label="Pairing server"]')
-        wd.wait_for("For testing only", 10, "4-override-open")
+        wd.wait_for("For testing only", 30, "4-override-open")
+        # Typed straight away, before the panel's own lookup of the saved override can land: what
+        # was typed must survive it (a late write into the field used to truncate it on a slow
+        # host, which is how this step failed in runs 3 and 4).
         wd.type_into('input[aria-label="Pairing server URL"]', "http://develop.aipotluck.org")
-        wd.click_button("Use")
-        page = wd.wait_for("plain http", 20, "4-override-refused")  # upstream's own rule, verbatim
+        assert wd.value_of('input[aria-label="Pairing server URL"]') == "http://develop.aipotluck.org", \
+            "the pairing-server field lost what was typed into it (its value is filled in async)"
+        wd.click_css_when_enabled('.override-panel button[type=submit]')
+        page = wd.wait_for("plain http", 120, "4-override-refused")  # upstream's own rule, verbatim
         wd.shot("4-override-refused")
         wd.type_into('input[aria-label="Pairing server URL"]', pairing_server.url + "/", clear=True)
-        wd.click_button("Use")
+        assert wd.value_of('input[aria-label="Pairing server URL"]') == pairing_server.url + "/", \
+            "the pairing-server field lost what was typed into it (its value is filled in async)"
+        wd.click_css_when_enabled('.override-panel button[type=submit]')
         host = pairing_server.url.split("://", 1)[1]
-        page = wd.wait_for(f"pairing with {host}", 20, "4-override-set", absent="For testing only")
+        page = wd.wait_for(f"pairing with {host}", 120, "4-override-set", absent="For testing only")
         wd.shot("4-override-set")
         settings = json.loads((home / ".local" / "share" / "aipotluck" / "gui-settings.json").read_text())
         # Saved in upstream's normalized form (trailing slash dropped), the exact --server-url login gets.
@@ -500,8 +532,7 @@ def main() -> int:
         wd.type_into("textarea.paste", json.dumps(FAKE_PAIRING))
         wd.shot("8-pasted")
         assert FAKE_PAIRING["tunnelSecret"] not in wd.text(), "secret visible on screen"
-        time.sleep(0.5)  # let the textarea's binding enable the button
-        wd.click_css("button.pair-pasted")
+        wd.click_css_when_enabled("button.pair-pasted")
         wd.wait_for("Sharing with AI Potluck", 300, "8-pair-pasted")
         runtime = json.loads((home / ".config" / "aipotluck" / "runtime.json").read_text())
         assert runtime["logged_in"] is True and runtime["tunnel"]["id"] == FAKE_PAIRING["tunnelId"]
@@ -538,21 +569,42 @@ def main() -> int:
             time.sleep(1)
         assert gone, "the app was still open 300s after Confirm"
         wd.sid = None
-        time.sleep(5)  # the detached cleanup runs once the app has exited
-        leftovers = [p for p in (
-            home / ".local" / "share" / "aipotluck",
-            # Named on its own too: the shared CLI copy is the one thing the GUI stages outside its
-            # own dirs, and a full uninstall has to take it with everything else.
-            home / ".local" / "share" / "aipotluck" / "cli",
-            home / ".config" / "aipotluck",
-            home / ".local" / "state" / "aipotluck",
-            home / ".local" / "bin" / "aipotluck-local-client",
-            home / ".config" / "systemd" / "user" / "aipotluck.service",
-        ) if p.exists() and (p.is_file() or any(p.iterdir()))]
-        for rc in (".profile", ".bashrc", ".bash_profile", ".zshenv"):
-            if (home / rc).exists() and "aipotluck-local-client" in (home / rc).read_text():
-                leftovers.append(home / rc)
-        assert not leftovers, f"left behind: {leftovers}"
+        # The app hands its own files to a detached cleanup that waits for it to exit, then deletes
+        # them (its ~130 MB runtime included, which takes a moment to walk on this host's disk).
+        # Poll rather than sleep a fixed 5s: a slow disk is not a leftover, and a real one still
+        # fails. What was actually left behind the first time was the GUI's own gui-settings.json,
+        # which uninstall now deletes (src-tauri/src/uninstall.rs).
+        def leftovers_now() -> list:
+            left = [p for p in (
+                home / ".local" / "share" / "aipotluck",
+                # Named on its own too: the shared CLI copy is the one thing the GUI stages outside
+                # its own dirs, and a full uninstall has to take it with everything else. This run
+                # ticks "CLI files" (checked above) and so takes the remove path, where upstream's
+                # uninstall deletes `cli/` and the GUI then prunes the root; a run that kept the CLI
+                # would have to allow `<data_home>/aipotluck/cli/` here instead.
+                home / ".local" / "share" / "aipotluck" / "cli",
+                home / ".config" / "aipotluck",
+                home / ".local" / "state" / "aipotluck",
+                home / ".local" / "bin" / "aipotluck-local-client",
+                home / ".config" / "systemd" / "user" / "aipotluck.service",
+            ) if p.exists() and (p.is_file() or any(p.iterdir()))]
+            for rc in (".profile", ".bashrc", ".bash_profile", ".zshenv"):
+                if (home / rc).exists() and "aipotluck-local-client" in (home / rc).read_text():
+                    left.append(home / rc)
+            return left
+
+        start = time.time()
+        deadline = start + 180
+        leftovers = leftovers_now()
+        while leftovers and time.time() < deadline:
+            time.sleep(1)
+            leftovers = leftovers_now()
+        waited = time.time() - start
+        assert not leftovers, (
+            f"left behind {waited:.0f}s after the app quit: {leftovers}\n"
+            + "\n".join(f"  {p}: {[q.name for q in p.iterdir()][:8] if p.is_dir() else 'file'}" for p in leftovers))
+        if waited > 5:
+            known.append(f"the detached cleanup needed {waited:.0f}s on this host (the test used to allow 5s)")
         cached_after = sorted(p.name for p in (home / ".cache" / "huggingface" / "hub").glob("models--*")
                               if any(p.rglob("*.gguf")))
         assert not cached_after, f"models still cached: {cached_after}"
