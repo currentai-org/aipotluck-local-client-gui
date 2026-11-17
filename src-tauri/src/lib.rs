@@ -35,6 +35,10 @@ struct AppState {
     /// The pid of the running task's upstream process, so a one-click pairing that is still
     /// waiting for the browser can be cancelled.
     task_pid: Mutex<Option<u32>>,
+    /// What this launch's offer of the bundled CLI to the machine's shared copy did
+    /// (Runtime::adopt): skipped, adopted, current, kept-newer or error. Set before the runtime is
+    /// published, so anything that can act on the runtime can see it.
+    cli_adopt: Mutex<Option<Value>>,
 }
 
 #[derive(Serialize, Clone)]
@@ -170,6 +174,7 @@ async fn app_state(state: State<'_, AppState>) -> Result<Value, String> {
         "settings_url": SETTINGS_URL,
         "server_url_override": settings::load_from(&settings::path()).server_url,
         "rosetta": translated_by_rosetta(),
+        "cli_adopt": state.cli_adopt.lock().unwrap().clone(),
     }))
 }
 
@@ -813,7 +818,16 @@ pub fn run() {
             std::thread::spawn(move || {
                 let state = handle.state::<AppState>();
                 match runtime::ensure_unpacked(&resource_dir) {
-                    Ok(r) => *state.runtime.lock().unwrap() = Some(r),
+                    Ok(r) => {
+                        // Before the UI can act on anything: offer this app's bundled CLI to the
+                        // machine's shared copy. Upstream decides whether it is newer, never
+                        // downgrades, does nothing before the first Set up, and reports in one
+                        // JSON line this app logs and surfaces as `app_state.cli_adopt`.
+                        let adopted = r.adopt();
+                        eprintln!("cli adopt: {adopted}");
+                        *state.cli_adopt.lock().unwrap() = Some(adopted);
+                        *state.runtime.lock().unwrap() = Some(r)
+                    }
                     Err(e) => *state.runtime_error.lock().unwrap() = Some(e),
                 }
                 let _ = handle.emit("runtime-ready", ());

@@ -195,6 +195,50 @@ pub fn ensure_unpacked(resource_dir: &Path) -> Result<Runtime, String> {
     })
 }
 
+/// The one line upstream's `installer.adopt` promises last on stdout: `ADOPT_RESULT <json>`,
+/// with `action` in skipped|adopted|current|kept-newer|error.
+pub const ADOPT_RESULT_PREFIX: &str = "ADOPT_RESULT ";
+
+/// How many stderr lines an adopt failure keeps, when there is no result line to go on.
+const ADOPT_ERROR_TAIL_LINES: usize = 20;
+
+fn adopt_error(error: String, code: Option<i32>) -> serde_json::Value {
+    serde_json::json!({ "action": "error", "error": error, "exit_code": code })
+}
+
+/// What `installer.adopt` said, as the app records and shows it.
+///
+/// Upstream prints exactly one stdout line for this (`ADOPT_RESULT <json>`, everything else goes
+/// to stderr), so the GUI reads that line rather than scraping prose. Anything that kept it from
+/// printing one -- a traceback, a missing module, a killed interpreter -- comes back in the same
+/// shape with `action: "error"` and stderr's tail as the message, so every caller has one thing to
+/// handle and a launch can never fail because of this.
+pub fn parse_adopt_result(stdout: &str, stderr: &str, code: Option<i32>) -> serde_json::Value {
+    for line in stdout.lines().rev() {
+        let Some(raw) = line.strip_prefix(ADOPT_RESULT_PREFIX) else {
+            continue;
+        };
+        return match serde_json::from_str::<serde_json::Value>(raw.trim()) {
+            Ok(serde_json::Value::Object(mut fields)) => {
+                fields.insert("exit_code".into(), serde_json::json!(code));
+                serde_json::Value::Object(fields)
+            }
+            Ok(other) => adopt_error(format!("ADOPT_RESULT is not a JSON object: {other}"), code),
+            Err(e) => adopt_error(format!("ADOPT_RESULT is not JSON ({e}): {raw}"), code),
+        };
+    }
+    let lines: Vec<&str> = stderr.lines().collect();
+    let tail = lines[lines.len().saturating_sub(ADOPT_ERROR_TAIL_LINES)..].join("\n");
+    adopt_error(
+        if tail.trim().is_empty() {
+            "no ADOPT_RESULT line".into()
+        } else {
+            tail
+        },
+        code,
+    )
+}
+
 /// A Command running `python` with `cwd` as the working directory, unbuffered, and with nothing
 /// inherited that could make it pick up a different Python's packages. Both copies are started
 /// this way, so a machine running the shared CLI copy behaves exactly like one running the bundle.
@@ -235,6 +279,37 @@ impl Runtime {
             }
         }
         (self.python_cmd(), self.upstream.clone())
+    }
+
+    /// The launch-time adopt entry point, as a command: upstream's own `installer.adopt`, run from
+    /// the bundled copy with the bundled interpreter, told where that interpreter lives so the
+    /// shared CLI copy keeps a working one of its own.
+    fn adopt_cmd(&self) -> Command {
+        let bundle = self.python_dir.display();
+        let mut cmd = self.python_cmd();
+        cmd.args(["-m", "aipotluck.installer.adopt"])
+            .args(["--if-installed", "--installed-by=gui"])
+            .arg(format!("--bundled-python-dir={bundle}"));
+        cmd
+    }
+
+    /// Offer this app's bundled CLI to the machine's shared copy, once per launch: upstream stages
+    /// it only when it is newer than what is installed (never a downgrade), re-points the shim and
+    /// service at it, and restarts the service only if it was running and something changed. Before
+    /// Set up it does nothing at all.
+    ///
+    /// Never fails: a result is always a JSON object with an `action`, and a launch that can't run
+    /// this still opens the window. Its outcome is in `app_state.cli_adopt`.
+    pub fn adopt(&self) -> serde_json::Value {
+        let out = self.adopt_cmd().output();
+        match out {
+            Ok(out) => parse_adopt_result(
+                &String::from_utf8_lossy(&out.stdout),
+                &String::from_utf8_lossy(&out.stderr),
+                out.status.code(),
+            ),
+            Err(e) => adopt_error(format!("could not start adopt: {e}"), None),
+        }
     }
 
     pub fn probe(&self) -> Result<serde_json::Value, String> {
@@ -462,7 +537,7 @@ pub fn write_private_credentials(raw: &str) -> Result<PathBuf, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{installed_cli_in, on_spawner_thread, Runtime, UpstreamCopy};
+    use super::{installed_cli_in, on_spawner_thread, parse_adopt_result, Runtime, UpstreamCopy};
     use std::path::{Path, PathBuf};
 
     /// A fresh directory under the system temp dir, unique per call: these tests write real
@@ -628,5 +703,108 @@ mod tests {
         assert_eq!(src, rt.upstream);
 
         std::env::remove_var("AIPOTLUCK_CLI_HOME");
+    }
+
+    /// Upstream's log noise goes to stderr, so the result line is the only thing on stdout that
+    /// matters -- and if more than one ever appears, the last is the one that describes how the
+    /// run ended. The exit code rides along so a reviewer can tell "adopted, exit 0" from
+    /// "adopted, exit 1".
+    #[test]
+    fn the_last_adopt_result_line_wins_over_everything_around_it() {
+        let stdout = concat!(
+            "ADOPT_RESULT {\"action\": \"current\", \"sha\": \"old\"}\n",
+            "some stray line upstream should never print\n",
+            "ADOPT_RESULT {\"action\": \"adopted\", \"sha\": \"abc\", \"installed_sha\": \"abc\", ",
+            "\"repointed\": true, \"service_restarted\": false}\n",
+        );
+        let value = parse_adopt_result(stdout, "[INFO] noise\n", Some(0));
+        assert_eq!(value["action"], "adopted");
+        assert_eq!(value["sha"], "abc");
+        assert_eq!(value["repointed"], true);
+        assert_eq!(value["exit_code"], 0);
+    }
+
+    /// A result line that isn't a JSON object is a bug in the thing that printed it, but it must
+    /// read as an error result, not a panic or a "ready" runtime with no adopt record.
+    #[test]
+    fn an_adopt_result_line_that_is_not_json_is_reported_as_an_error() {
+        let bad = parse_adopt_result("ADOPT_RESULT {not json\n", "", Some(1));
+        assert_eq!(bad["action"], "error");
+        assert_eq!(bad["exit_code"], 1);
+        assert!(
+            bad["error"].as_str().unwrap().contains("not json"),
+            "the message names what was printed: {bad}"
+        );
+
+        let not_object = parse_adopt_result("ADOPT_RESULT \"skipped\"\n", "", Some(0));
+        assert_eq!(not_object["action"], "error");
+        assert_eq!(not_object["exit_code"], 0);
+    }
+
+    /// The case that actually happens on a broken machine: no result line at all. The error must
+    /// carry stderr's tail, and only its tail -- a traceback can be hundreds of lines, and this
+    /// value is logged and handed to the UI.
+    #[test]
+    fn no_adopt_result_line_reports_stderrs_tail_as_the_error() {
+        let stderr: String = (1..=25).map(|n| format!("line {n}\n")).collect();
+        let value = parse_adopt_result("[INFO] nothing to do\n", &stderr, Some(1));
+        assert_eq!(value["action"], "error");
+        assert_eq!(value["exit_code"], 1);
+        let error = value["error"].as_str().unwrap();
+        assert!(
+            error.starts_with("line 6\n") && error.ends_with("line 25"),
+            "only the last 20 stderr lines survive: {error}"
+        );
+        assert_eq!(error.lines().count(), 20);
+
+        let silent = parse_adopt_result("", "   \n\n", Some(0));
+        assert_eq!(silent["action"], "error");
+        assert_eq!(silent["error"], "no ADOPT_RESULT line");
+        assert_eq!(silent["exit_code"], 0);
+    }
+
+    /// The launch-time command is upstream's own adopt entry point, run from the bundled tree with
+    /// the bundled interpreter, with the two flags the design fixes: `--if-installed` (nothing at
+    /// all before Set up) and the interpreter's own directory for the shared copy to keep.
+    #[test]
+    fn adopt_runs_upstreams_adopt_entry_point_from_the_bundled_copy() {
+        let rt = a_runtime();
+        let cmd = rt.adopt_cmd();
+        assert_eq!(cmd.get_program(), rt.python.as_os_str());
+        assert_eq!(cmd.get_current_dir(), Some(rt.upstream.as_path()));
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args,
+            [
+                "-m",
+                "aipotluck.installer.adopt",
+                "--if-installed",
+                "--installed-by=gui",
+                "--bundled-python-dir=/bundled",
+            ]
+        );
+    }
+
+    /// A launch on a machine where the bundled interpreter is missing must still open the window:
+    /// adopt reports the failure as a result instead of returning one to propagate.
+    #[test]
+    fn adopt_that_cannot_start_reports_an_error_instead_of_failing_the_launch() {
+        let dir = temp_dir("adopt-no-python");
+        let rt = Runtime {
+            python: dir.join("does-not-exist").join("python3"),
+            ..a_runtime()
+        };
+        let value = rt.adopt();
+        assert_eq!(value["action"], "error");
+        assert!(
+            value["error"]
+                .as_str()
+                .unwrap()
+                .contains("could not start adopt"),
+            "{value}"
+        );
     }
 }
