@@ -110,6 +110,15 @@ def test_probe_reports_upstreams_own_layout_and_a_fresh_machine_as_not_installed
     assert probe["service_manager_usable"] is (sys.platform in ("darwin", "win32"))
 
 
+def test_the_test_only_switch_forces_the_window_hosted_path(home: Path, monkeypatch):
+    """tools/e2e-smoke.py drives the service the GUI hosts itself, and pins that with this switch so
+    every host runs the same steps. On macOS and Windows the answer below is otherwise always
+    "usable", and on a Linux box with a systemd user session it is "usable" too -- which is what the
+    smoke host did whenever systemd answered inside the probe's timeout."""
+    monkeypatch.setenv("AIPOTLUCK_GUI_TEST_NO_SERVICE_MANAGER", "1")
+    assert _layout(home)["service_manager_usable"] is False
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows Task Scheduler")
 def test_an_installed_windows_device_with_no_scheduled_task_is_hosted_by_the_app(home: Path):
     """Upstream now refuses to report a task it couldn't register (a non-interactive logon). After
