@@ -32,6 +32,12 @@ struct AppState {
     /// Only set when this host has no usable OS service manager and the GUI is hosting upstream's
     /// service payload itself (see Runtime::spawn_service).
     hosted_service: Mutex<Option<Child>>,
+    /// Held while that service is started or stopped. Two callers reach it at once -- the 3-second
+    /// status poll and the task that just finished (install, pair) -- and unserialised they both
+    /// spawned: the loser of the race for the port exited, its handle replaced the live one's, and
+    /// the window then reported a service it was not hosting (an orphan this process could no
+    /// longer stop, which is what tools/e2e-smoke.py's status step caught on the arm64 host).
+    hosted_lock: Mutex<()>,
     busy: Mutex<Option<&'static str>>,
     /// The pid of the running task's upstream process, so a one-click pairing that is still
     /// waiting for the browser can be cancelled.
@@ -82,6 +88,8 @@ fn hosted_running(state: &AppState) -> bool {
 }
 
 fn stop_hosted(state: &AppState) {
+    // Serialised with ensure_hosted_service: see AppState::hosted_lock.
+    let _serialised = state.hosted_lock.lock().unwrap();
     if let Some(mut child) = state.hosted_service.lock().unwrap().take() {
         // SIGTERM first: upstream's service shuts llama-server and newt down cleanly on it, where
         // a SIGKILL would orphan both.
@@ -111,6 +119,12 @@ fn ensure_hosted_service(state: &AppState, rt: &Runtime, probe: &Value) -> Resul
     }
     let installed = probe["installed"].as_bool().unwrap_or(false);
     let usable = probe["service_manager_usable"].as_bool().unwrap_or(true);
+    // One spawner at a time (see AppState::hosted_lock): a second caller arriving while the first
+    // is still waiting for its service to answer would otherwise spawn a second one on the same
+    // port. The one that loses the port exits at once, and whoever stored its handle last left the
+    // live service untracked -- reported as "Running in the background" by a window that was
+    // hosting it (an orphan it could no longer stop, which the uninstall then races).
+    let _serialised = state.hosted_lock.lock().unwrap();
     if !installed || usable || hosted_running(state) || service::healthy() {
         return Ok(false);
     }
