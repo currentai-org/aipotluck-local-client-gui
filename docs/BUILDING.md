@@ -91,10 +91,17 @@ tools/e2e-smoke.py --app src-tauri/target/release/aipotluck-local-client-gui
 (its version must match the installed `libwebkit2gtk-4.1-0`) and `xvfb`. It starts its own Xvfb
 display, so the window never appears on the desktop, even in a Wayland session; pass `--visible`
 to watch it on `$DISPLAY` instead. It drives the real window on a throwaway HOME with no systemd
-session:
+session (pinned with `AIPOTLUCK_GUI_TEST_NO_SERVICE_MANAGER`, so the window-hosted path is what
+every host exercises, rather than whichever answer systemd gives that minute):
 - the install plan, then Customize (a bad model id refused, a small real model sized);
 - set up, checking upstream pulled exactly that model;
 - pair, with a fake, unreachable pairing; status; unpair.
 
 It fails if any process the app started outlives it. `--default-model` skips Customize and
 installs upstream's default model instead.
+
+Give it a machine that isn't doing anything else. Each run unpacks a 130 MB runtime and starts a
+debug build of the app under WebKit, and on an 8 GB arm64 board with another build saturating the
+same disk, `WebKitWebDriver` was seen dying mid-run (tauri-driver: "Remote end closed connection
+without response"; the app's own code was fine). Nothing in the test can retry that away, so run it
+on a quiet host — a run takes about 50 seconds there.
