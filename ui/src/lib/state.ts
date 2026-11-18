@@ -313,6 +313,6 @@ export function uninstallSummary(removeCli: boolean, removeModels: boolean): str
 			: 'Stops and removes the background service, and deletes this app, llama.cpp, newt, this computer’s pairing, logs and downloads. Downloaded models are kept.';
 	}
 	return removeModels
-		? 'Deletes this app and every downloaded model. The command-line client and its background service stay installed and keep running.'
-		: 'Deletes only this app. The command-line client, its background service and your models stay installed and keep running.';
+		? 'Deletes this app and every downloaded model. The command-line client and its background service stay installed and keep running from their own folder.'
+		: 'Deletes only this app. The command-line client, its background service and your models stay installed and keep running from their own folder.';
 }
