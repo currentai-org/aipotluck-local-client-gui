@@ -322,6 +322,10 @@ def main() -> int:
         found = shell.stdout.splitlines()[0] if shell.stdout else ""
         assert found == str(home / ".local" / "bin" / "aipotluck-local-client"), (shell.stdout, shell.stderr)
         assert shell.returncode == 0 and "uninstall" in shell.stdout, (shell.stdout, shell.stderr)
+        # The shim runs the *shared* CLI copy both installers stage (`<data_home>/aipotluck/cli/
+        # src-<sha12>`), not a copy inside this app's runtime dir: the machine keeps one copy.
+        shim = (home / ".local" / "bin" / "aipotluck-local-client").read_text()
+        assert "/aipotluck/cli/src-" in shim, shim
         steps.append("a new login shell finds `aipotluck-local-client` on PATH and runs it")
 
         # One-click is the default; the paste box stays tucked away until asked for.
@@ -537,6 +541,9 @@ def main() -> int:
         time.sleep(5)  # the detached cleanup runs once the app has exited
         leftovers = [p for p in (
             home / ".local" / "share" / "aipotluck",
+            # Named on its own too: the shared CLI copy is the one thing the GUI stages outside its
+            # own dirs, and a full uninstall has to take it with everything else.
+            home / ".local" / "share" / "aipotluck" / "cli",
             home / ".config" / "aipotluck",
             home / ".local" / "state" / "aipotluck",
             home / ".local" / "bin" / "aipotluck-local-client",
