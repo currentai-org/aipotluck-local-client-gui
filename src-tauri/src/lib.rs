@@ -15,6 +15,7 @@ mod uninstall;
 use runtime::{Runtime, UpstreamCopy};
 use serde::Serialize;
 use serde_json::{json, Value};
+use std::path::Path;
 use std::process::Child;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -627,11 +628,39 @@ fn app_dirs(app: &AppHandle) -> Vec<std::path::PathBuf> {
     .collect()
 }
 
+/// Whether the GUI's own runtime copy (`gui-runtime/`) goes with an uninstall.
+///
+/// With the CLI removed too, nothing can still be running from it, so it always goes. Keeping the
+/// CLI is the case to be careful about: the service the person keeps could still be executing the
+/// interpreter or the upstream tree inside `runtime_root()`, so it only goes once something else is
+/// running there instead -- a valid shared CLI copy whose interpreter *and* source tree both live
+/// outside the root -- or once the probe says nothing is installed at all. `starts_with` is on the
+/// paths as stored: no canonicalizing, so a symlinked data dir is compared where it actually is.
+fn delete_gui_runtime(
+    remove_cli: bool,
+    installed: Option<&runtime::InstalledCli>,
+    install_present: bool,
+    runtime_root: &Path,
+) -> bool {
+    if remove_cli {
+        return true;
+    }
+    match installed {
+        Some(cli) => !cli.python.starts_with(runtime_root) && !cli.src.starts_with(runtime_root),
+        None => !install_present,
+    }
+}
+
 /// Uninstall, then quit. `remove_cli`: upstream's `cli uninstall` stops and removes the service and
 /// deletes the CLI's install (with the models too if `remove_models`); without it, `remove_models`
 /// alone runs `cli uninstall --models-only`, leaving the CLI and its service running. The GUI's own
 /// files always go: they're handed to a detached cleanup process that waits for this app to exit
 /// (its executable and webview profile are in use until then) -- see uninstall.rs.
+///
+/// The GUI's unpacked runtime (`gui-runtime/`) goes too whenever nothing will be running from it
+/// afterwards: always when the CLI goes, and when the CLI stays only if a valid shared CLI copy
+/// outside it took over (the launch-time adopt is re-run first, so the kept CLI's shim and service
+/// point at the shared copy) or if nothing is installed at all -- see `delete_gui_runtime`.
 #[tauri::command]
 fn uninstall_app(app: AppHandle, remove_cli: bool, remove_models: bool) -> Result<(), String> {
     let state = app.state::<AppState>();
@@ -696,12 +725,51 @@ fn uninstall_app(app: AppHandle, remove_cli: bool, remove_models: bool) -> Resul
         let exe = std::env::current_exe().unwrap_or_default();
         let install =
             uninstall::AppInstall::detect(&exe, std::env::var_os("APPIMAGE").map(Into::into));
+        // Keeping the CLI: re-run the launch-time adopt first, so the kept CLI's shim and service
+        // run from the shared copy rather than from anything under `gui-runtime/`. Upstream stages
+        // it only when the bundled one is newer, and never when nothing is installed.
+        let mut installed = None;
+        let mut install_present = false;
+        if !remove_cli {
+            let adopt = rt.adopt();
+            let _ = app.emit(
+                "task-log",
+                TaskLine {
+                    task: "uninstall",
+                    line: format!("cli adopt: {adopt}"),
+                },
+            );
+            installed = runtime::installed_cli_in(&paths::cli_home());
+            // A probe that can't answer counts as "still installed": keep the runtime.
+            install_present = rt
+                .probe()
+                .ok()
+                .and_then(|p| p.get("installed").and_then(Value::as_bool))
+                .unwrap_or(true);
+        }
         let mut candidates = app_dirs(&app);
         // With the CLI gone too, nothing runs from the bundled copy of upstream any more (the
         // service ran from the CLI home, and upstream's uninstall removes that): both go with the
-        // app. Keeping the CLI (models-only) leaves both alone.
-        if remove_cli {
-            candidates.push(paths::runtime_root());
+        // app. With the CLI kept, the runtime goes only once the kept CLI no longer runs from it.
+        let runtime_root = paths::runtime_root();
+        if delete_gui_runtime(
+            remove_cli,
+            installed.as_ref(),
+            install_present,
+            &runtime_root,
+        ) {
+            candidates.push(runtime_root);
+        } else {
+            let _ = app.emit(
+                "task-log",
+                TaskLine {
+                    task: "uninstall",
+                    line: format!(
+                        "Keeping {}: the command-line client still runs from it.",
+                        runtime_root.display()
+                    ),
+                },
+            );
         }
         let identifier = app.config().identifier.clone();
         let doomed = uninstall::plan(candidates, &paths::home(), &identifier, &install);
@@ -764,7 +832,66 @@ fn open_url(url: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{checked_backend, is_pairing_link};
+    use super::{checked_backend, delete_gui_runtime, is_pairing_link};
+    use crate::runtime::InstalledCli;
+    use std::path::{Path, PathBuf};
+
+    fn shared_cli(python: &str, src: &str) -> InstalledCli {
+        InstalledCli {
+            schema: 1,
+            sha: "0123456789ab".into(),
+            python: PathBuf::from(python),
+            src: PathBuf::from(src),
+        }
+    }
+
+    // The runtime root holds the bundled interpreter and the bundled upstream tree, so a kept CLI
+    // pointed inside it must keep it: deleting it would break the service the person kept.
+    #[test]
+    fn the_gui_runtime_goes_only_once_nothing_the_cli_keeps_runs_from_it() {
+        let root = Path::new("/home/u/.local/share/aipotluck/gui-runtime");
+        let shared = shared_cli(
+            "/home/u/.local/share/aipotluck/cli/python-3.12/python/bin/python3",
+            "/home/u/.local/share/aipotluck/cli/src-0123456789ab",
+        );
+
+        // Removing the CLI too: nothing is left to run from it, whatever the rest says.
+        assert!(delete_gui_runtime(true, None, true, root));
+        assert!(delete_gui_runtime(true, Some(&shared), true, root));
+
+        // Keeping the CLI: a valid shared copy both of whose paths are outside the root took over.
+        assert!(delete_gui_runtime(false, Some(&shared), true, root));
+
+        // ...but either path inside the root means the kept CLI still runs from it.
+        let python_inside = shared_cli(
+            "/home/u/.local/share/aipotluck/gui-runtime/python-3.12/python/bin/python3",
+            "/home/u/.local/share/aipotluck/cli/src-0123456789ab",
+        );
+        assert!(!delete_gui_runtime(false, Some(&python_inside), true, root));
+        assert!(!delete_gui_runtime(
+            false,
+            Some(&python_inside),
+            false,
+            root
+        ));
+        let src_inside = shared_cli(
+            "/home/u/.local/share/aipotluck/cli/python-3.12/python/bin/python3",
+            "/home/u/.local/share/aipotluck/gui-runtime/upstream-0123456789ab",
+        );
+        assert!(!delete_gui_runtime(false, Some(&src_inside), true, root));
+
+        // A prefix that isn't actually under the root (component-wise, not string-wise) is outside.
+        let sibling = shared_cli(
+            "/home/u/.local/share/aipotluck/cli/python-3.12/python/bin/python3",
+            "/home/u/.local/share/aipotluck/gui-runtime-old/src-0123456789ab",
+        );
+        assert!(delete_gui_runtime(false, Some(&sibling), true, root));
+
+        // No shared copy: nothing is installed, so nothing uses the root -> it goes. Anything
+        // installed means we can't see what runs from it, so it stays.
+        assert!(delete_gui_runtime(false, None, false, root));
+        assert!(!delete_gui_runtime(false, None, true, root));
+    }
 
     #[test]
     fn only_a_pairing_page_link_can_be_reopened() {
