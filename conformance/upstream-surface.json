@@ -832,9 +832,9 @@
       "tunnel"
     ]
   },
-  "source_commit": "05c5cc42884cc6a4542bead28607c47c6a93237f",
+  "source_commit": "a72f6c87350ecb42e5f9edd444c34a23a851f41b",
   "source_repo": "aipotluck-local-client",
-  "source_subject": "fix(cli): stop the PATH block growing a blank line per reinstall",
+  "source_subject": "Merge pull request #11 from currentai-org/hermesandrew/cur-4337-install-cli-to-system-path",
   "tunnel": {
     "argv": [
       {
