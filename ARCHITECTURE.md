@@ -180,8 +180,9 @@ the shared copy is looked for, as `AIPOTLUCK_GUI_RUNTIME_DIR` does for the bundl
   the job's `download` byte count drives a real progress bar. A pull downloads and sizes only;
   measuring is Benchmark's. Upstream runs one job at a time, so the controls wait too.
 - **Unpair** runs `cli logout`.
-- **Uninstall** (footer) quits the app and hands its own files — webview data, caches, logs — to a
-  detached cleanup that waits for it to exit (`uninstall.rs`). The dialog's CLI and model boxes
+- **Uninstall** (footer) quits the app and hands its own files — webview data, caches, logs and
+  `gui-settings.json` — to a detached cleanup that waits for it to exit (`uninstall.rs`). The
+  dialog's CLI and model boxes
   decide what else goes: both ticked runs `cli uninstall --remove-models`, the CLI alone runs
   `cli uninstall`, and models alone run `cli uninstall --models-only`, which leaves the CLI and its
   service running. The GUI's unpacked runtime (`gui-runtime/`) goes with everything else as soon as
@@ -224,3 +225,5 @@ The UI says plainly that the server only runs while the window is open.
   (docs/BUILDING.md).
 - The keep-CLI uninstall and launch-time adopt were verified on macOS by hand (CUR-4337); the Linux
   e2e smoke test was updated but not re-run for that change.
+- The keep-CLI uninstall path has no automated test end to end: it needs a real install to decide
+  whether `gui-runtime/` can go, and the smoke test only exercises the full uninstall.

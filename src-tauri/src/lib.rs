@@ -748,6 +748,9 @@ fn uninstall_app(app: AppHandle, remove_cli: bool, remove_models: bool) -> Resul
                 .unwrap_or(true);
         }
         let mut candidates = app_dirs(&app);
+        // This app's own preferences file lives beside the runtime, inside upstream's install root,
+        // so it is never upstream's to remove: it goes with the app whichever boxes were ticked.
+        candidates.push(settings::path());
         // With the CLI gone too, nothing runs from the bundled copy of upstream any more (the
         // service ran from the CLI home, and upstream's uninstall removes that): both go with the
         // app. With the CLI kept, the runtime goes only once the kept CLI no longer runs from it.

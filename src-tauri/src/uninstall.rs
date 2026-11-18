@@ -110,7 +110,8 @@ pub fn safe_to_delete(path: &Path, home: &Path, identifier: &str, app: &AppInsta
     if app.deletable() == Some(path) {
         return true;
     }
-    let ours = |c: &std::ffi::OsStr| c == identifier || c == "gui-runtime";
+    let ours =
+        |c: &std::ffi::OsStr| c == identifier || c == "gui-runtime" || c == "gui-settings.json";
     path.components().any(|c| ours(c.as_os_str()))
 }
 
@@ -250,6 +251,31 @@ mod tests {
         ));
         assert!(!safe_to_delete(
             Path::new("/home/u/Downloads"),
+            home,
+            ID,
+            &dev()
+        ));
+    }
+
+    // The GUI's own preferences file sits beside the runtime, inside upstream's install root, so it
+    // is ours to delete -- and it has to be named explicitly: the folder it lives in is not.
+    #[test]
+    fn the_gui_settings_file_beside_the_runtime_is_deletable_and_its_folder_is_not() {
+        let home = Path::new("/home/u");
+        assert!(safe_to_delete(
+            Path::new("/home/u/.local/share/aipotluck/gui-settings.json"),
+            home,
+            ID,
+            &dev()
+        ));
+        assert!(!safe_to_delete(
+            Path::new("/home/u/.local/share/aipotluck"),
+            home,
+            ID,
+            &dev()
+        ));
+        assert!(!safe_to_delete(
+            Path::new("/home/u/.local/share/aipotluck/someone-elses.json"),
             home,
             ID,
             &dev()
