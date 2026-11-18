@@ -302,4 +302,9 @@ describe('uninstallSummary', () => {
 		expect(guiOnly).not.toMatch(/removes the background service/);
 		expect(uninstallSummary(false, true)).toMatch(/every downloaded model.*service stay/);
 	});
+
+	it('says a kept command-line client runs from its own folder, not the app’s', () => {
+		expect(uninstallSummary(false, false)).toMatch(/their own folder/);
+		expect(uninstallSummary(false, true)).toMatch(/their own folder/);
+	});
 });

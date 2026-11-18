@@ -49,10 +49,10 @@
   "cli": {
     "files": {
       "cli.py": {
-        "sha256": "7bcd247e683bd06cea123c5bfdfab463afb548965ab4e59c28299acb6cbfb15c"
+        "sha256": "c29cee28d6d1d4336d3b4eaa793f0c7bc03d83404b97243a0d9b69e25ca5f906"
       },
       "install.py": {
-        "sha256": "85dd0ee655dc2f0b194d3b864290776e803e769e057f153e4c0d166a09e47a45"
+        "sha256": "b24c728055ea8da9731fcd8630652029d8e66b4e247d367cd12d6cf76a055fc8"
       }
     },
     "install_choice_sets": {
@@ -63,6 +63,10 @@
         "vulkan",
         "rocm",
         "metal"
+      ],
+      "--installed-by": [
+        "cli",
+        "gui"
       ],
       "--via": [
         "direct"
@@ -109,6 +113,17 @@
         "takes_value": true,
         "type": "float"
       },
+      "--bundled-python-dir": {
+        "choices": null,
+        "default": null,
+        "help": "The directory holding the interpreter running this installer, when that interpreter is a bundled one (the GUI's): copied into the CLI home, so the installed CLI and service keep working if that bundle is later moved or removed. Per-user installs only; omitted, the running interpreter's own path is used as is (a system python is already durable).",
+        "names": [
+          "--bundled-python-dir"
+        ],
+        "required": false,
+        "takes_value": true,
+        "type": "Path"
+      },
       "--gpu-layers": {
         "choices": null,
         "default": "auto",
@@ -130,6 +145,20 @@
         "required": false,
         "takes_value": true,
         "type": "Path"
+      },
+      "--installed-by": {
+        "choices": [
+          "cli",
+          "gui"
+        ],
+        "default": "cli",
+        "help": "Recorded in the CLI home's manifest so `status` can say which installer staged the copy -- and which one to uninstall first. Default: cli.",
+        "names": [
+          "--installed-by"
+        ],
+        "required": false,
+        "takes_value": true,
+        "type": null
       },
       "--jobs": {
         "choices": null,
@@ -803,9 +832,9 @@
       "tunnel"
     ]
   },
-  "source_commit": "af926ae01ee7ca19b327062b48859bb7be36de90",
-  "source_repo": "upstream-af926ae01ee7ca19b327062b48859bb7be36de90",
-  "source_subject": "Merge pull request #10 from currentai-org/andrewtergis/cur-4770-scrub-local-client-repos-of-non-public-information",
+  "source_commit": "a72f6c87350ecb42e5f9edd444c34a23a851f41b",
+  "source_repo": "aipotluck-local-client",
+  "source_subject": "Merge pull request #11 from currentai-org/hermesandrew/cur-4337-install-cli-to-system-path",
   "tunnel": {
     "argv": [
       {

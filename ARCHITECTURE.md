@@ -89,8 +89,36 @@ Why Python is bundled: upstream is stdlib-only (`dependencies = []`, requires �
 Windows and some minimal Linux installs have no suitable `python3`. A pinned interpreter also means
 the one we test (`tools/bundled-python.sh`) is the one users run.
 
+### Which copy of upstream runs what
+
+The machine can hold two copies of upstream's code: this app's bundled one (`gui-runtime/`, above)
+and the shared CLI copy at `<data_home>/aipotluck/cli/`, which is the one copy both installers stage
+into and which upstream's `cli_home` describes in `current.json` (a copy is only replaced by a
+strictly newer source commit, so neither installer can downgrade the other). Set up runs the
+*bundled* `aipotluck.installer.install`, with `--installed-by=gui` and
+`--bundled-python-dir=<bundled interpreter dir>` so upstream stages its own shared copy and takes a
+working interpreter with it; everything else that acts on the machine -- `cli login` (both pairing
+paths), `cli logout`, `cli uninstall`, and the service payload the GUI hosts on hosts with no
+service manager -- runs the *installed* copy when `current.json` names one that is still usable
+(schema 1, the interpreter a file, the source tree a directory), and falls back to the bundled copy
+otherwise. That is what keeps the GUI and the `aipotluck-local-client` command from disagreeing
+about the version installed: whichever side upgrades, both run it next. The sidecars (`gui_probe.py`,
+`gui_plan.py`, `gui_server.py`) always run the bundled copy, because they import upstream's Python
+API directly and are pinned to the commit they shipped with. `AIPOTLUCK_CLI_HOME` overrides where
+the shared copy is looked for, as `AIPOTLUCK_GUI_RUNTIME_DIR` does for the bundle.
+
 ## Flows
 
+- **Launch.** The app unpacks its runtime, then offers that bundled CLI to the machine's shared
+  copy before the UI can act on anything: `installer.adopt --if-installed --installed-by=gui
+  --bundled-python-dir=<bundled interpreter dir>`, run from the bundled tree with the bundled
+  interpreter. Upstream stages it only when its source commit is strictly newer than what is
+  installed (so the GUI and the CLI never downgrade each other), re-points the shared copy's shim
+  and service at it, and restarts the service only if it was running and something actually
+  changed. Before the first Set up it does nothing at all ("skipped") — opening the app never
+  creates a CLI home or a shim nobody asked for. It prints one `ADOPT_RESULT <json>` line, which
+  becomes `app_state.cli_adopt` (and one `cli adopt:` line in the app's stderr log); a failure
+  there is reported in that field, never as a failed launch.
 - **Plan.** Before Set up, the screen lists what will be installed (client, llama.cpp, newt, model)
   with approximate sizes. `gui_plan.py` asks upstream's own code which llama.cpp build and newt
   binary this host gets and which model is the default, sizes the model with upstream's
@@ -152,6 +180,16 @@ the one we test (`tools/bundled-python.sh`) is the one users run.
   the job's `download` byte count drives a real progress bar. A pull downloads and sizes only;
   measuring is Benchmark's. Upstream runs one job at a time, so the controls wait too.
 - **Unpair** runs `cli logout`.
+- **Uninstall** (footer) quits the app and hands its own files — webview data, caches, logs and
+  `gui-settings.json` — to a detached cleanup that waits for it to exit (`uninstall.rs`). The
+  dialog's CLI and model boxes
+  decide what else goes: both ticked runs `cli uninstall --remove-models`, the CLI alone runs
+  `cli uninstall`, and models alone run `cli uninstall --models-only`, which leaves the CLI and its
+  service running. The GUI's unpacked runtime (`gui-runtime/`) goes with everything else as soon as
+  nothing runs from it any more: always when the CLI goes too, and with the CLI kept only after
+  re-running the launch-time adopt and finding that nothing the machine keeps still points inside
+  it — a valid shared CLI copy whose interpreter and source tree are both outside the root, or
+  nothing installed at all. Otherwise it stays, and the log says why (`delete_gui_runtime`).
 
 ### Hosts with no service manager
 
@@ -185,3 +223,7 @@ The UI says plainly that the server only runs while the window is open.
   secrets listed in docs/RELEASING.md.
 - Release `.deb`/AppImage builds must be made on Ubuntu 22.04 for glibc compatibility
   (docs/BUILDING.md).
+- The keep-CLI uninstall and launch-time adopt were verified on macOS by hand (CUR-4337); the Linux
+  e2e smoke test was updated but not re-run for that change.
+- The keep-CLI uninstall path has no automated test end to end: it needs a real install to decide
+  whether `gui-runtime/` can go, and the smoke test only exercises the full uninstall.

@@ -4,6 +4,12 @@
 //! What's left is the GUI's own:
 //! - the bundled runtime unpacked into `<data_home>/aipotluck/gui-runtime` (only when the CLI goes
 //!   too -- a kept CLI's service runs from that interpreter and source);
+//! - the settings file, `<data_home>/aipotluck/gui-settings.json`, which sits in upstream's install
+//!   root and is therefore not upstream's to delete (it is only there when the pairing-server
+//!   override was used, and goes with the app whichever boxes were ticked) -- and, once that and the
+//!   runtime are gone, the install root itself, which upstream's own uninstall could not prune
+//!   because the GUI's files were still in it. Only when the CLI goes too: a kept CLI's `cli/`
+//!   lives in that root, so the root is left alone;
 //! - the webview's data and caches, in the per-app directories Tauri derives from the identifier;
 //! - the app itself: run its NSIS uninstaller on Windows, delete the `.app` on macOS, delete the
 //!   AppImage on Linux. A `.deb` install belongs to the package manager and is left for it.
@@ -102,12 +108,19 @@ impl AppInstall {
 
 /// Refuses anything that could be more than this app's own files: a filesystem root, the home
 /// directory or one of its parents, or a path that isn't recognisably ours (named for the app's
-/// identifier, the bundled runtime, or the app artifact itself).
-pub fn safe_to_delete(path: &Path, home: &Path, identifier: &str, app: &AppInstall) -> bool {
+/// identifier, the bundled runtime, the app artifact itself, or one of `own_files` -- files this
+/// app writes by itself, wherever they live).
+pub fn safe_to_delete(
+    path: &Path,
+    home: &Path,
+    identifier: &str,
+    app: &AppInstall,
+    own_files: &[PathBuf],
+) -> bool {
     if path.parent().is_none() || path == home || home.starts_with(path) {
         return false;
     }
-    if app.deletable() == Some(path) {
+    if own_files.iter().any(|f| f == path) || app.deletable() == Some(path) {
         return true;
     }
     let ours = |c: &std::ffi::OsStr| c == identifier || c == "gui-runtime";
@@ -120,13 +133,14 @@ pub fn plan(
     home: &Path,
     identifier: &str,
     app: &AppInstall,
+    own_files: &[PathBuf],
 ) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = vec![];
     let all = candidates
         .into_iter()
         .chain(app.deletable().map(Path::to_path_buf));
     for p in all {
-        if safe_to_delete(&p, home, identifier, app) && !out.contains(&p) {
+        if safe_to_delete(&p, home, identifier, app, own_files) && !out.contains(&p) {
             out.push(p);
         }
     }
@@ -138,8 +152,14 @@ fn ps_quote(p: &Path) -> String {
 }
 
 /// A detached process that waits for `pid` to exit, runs the Windows uninstaller if there is one,
-/// then deletes `paths`.
-pub fn cleanup_command(pid: u32, app: &AppInstall, paths: &[PathBuf]) -> Command {
+/// then deletes `paths`, and finally removes `prune_if_empty` if what was deleted left it empty.
+pub fn cleanup_command(
+    pid: u32,
+    app: &AppInstall,
+    paths: &[PathBuf],
+    prune_if_empty: Option<&Path>,
+) -> Command {
+    let prune = prune_if_empty.map(|p| p.display().to_string());
     if cfg!(windows) {
         let mut script = format!(
             "$ErrorActionPreference='SilentlyContinue'; Wait-Process -Id {pid} -Timeout 120; Start-Sleep -Milliseconds 500; "
@@ -152,6 +172,14 @@ pub fn cleanup_command(pid: u32, app: &AppInstall, paths: &[PathBuf]) -> Command
         }
         for p in paths {
             script += &format!("Remove-Item -LiteralPath {} -Recurse -Force; ", ps_quote(p));
+        }
+        if let Some(prune) = prune_if_empty {
+            // Only if nothing else is left in it: Remove-Item on a non-empty directory would take
+            // whatever else lives there with it.
+            script += &format!(
+                "if ((Test-Path -LiteralPath {0}) -and -not (Get-ChildItem -LiteralPath {0} -Force)) {{ Remove-Item -LiteralPath {0} -Force }}; ",
+                ps_quote(prune)
+            );
         }
         let mut c = Command::new("powershell.exe");
         c.args([
@@ -177,11 +205,16 @@ pub fn cleanup_command(pid: u32, app: &AppInstall, paths: &[PathBuf]) -> Command
     let mut c = Command::new("/bin/sh");
     c.arg("-c")
         .arg(
-            "pid=$1; shift; i=0; while kill -0 \"$pid\" 2>/dev/null && [ $i -lt 600 ]; do \
-             sleep 0.2; i=$((i+1)); done; rm -rf -- \"$@\"",
+            // $1 is the pid, $2 the directory to prune once it is empty (empty = nothing to prune).
+            // rmdir only ever removes an empty directory, and a failure there (it still holds
+            // something of the user's) is not an error: the deletions above are what mattered.
+            "pid=$1; prune=$2; shift 2; i=0; while kill -0 \"$pid\" 2>/dev/null && [ $i -lt 600 ]; do \
+             sleep 0.2; i=$((i+1)); done; rm -rf -- \"$@\"; \
+             if [ -n \"$prune\" ]; then rmdir -- \"$prune\" 2>/dev/null; fi; exit 0",
         )
         .arg("aipotluck-uninstall")
         .arg(pid.to_string())
+        .arg(prune.unwrap_or_default())
         .args(paths);
     #[cfg(unix)]
     {
@@ -199,6 +232,8 @@ mod tests {
     use super::*;
 
     const ID: &str = "org.aipotluck.localclient";
+    /// No own file named: the plain "is this path recognisably ours" questions.
+    const NONE: &[PathBuf] = &[];
 
     fn dev() -> AppInstall {
         AppInstall::Unmanaged {
@@ -210,13 +245,16 @@ mod tests {
     fn never_deletes_a_root_the_home_dir_or_one_of_its_parents() {
         let home = Path::new("/home/u");
         for p in ["/", "/home", "/home/u"] {
-            assert!(!safe_to_delete(Path::new(p), home, ID, &dev()), "{p}");
+            assert!(!safe_to_delete(Path::new(p), home, ID, &dev(), NONE), "{p}");
         }
         // Even when the name check alone would let it through: a home directory (or a parent of
         // it) that happens to be named like one of ours is still never deleted.
         let odd_home = Path::new("/srv/gui-runtime/u");
         for p in ["/srv/gui-runtime", "/srv/gui-runtime/u"] {
-            assert!(!safe_to_delete(Path::new(p), odd_home, ID, &dev()), "{p}");
+            assert!(
+                !safe_to_delete(Path::new(p), odd_home, ID, &dev(), NONE),
+                "{p}"
+            );
         }
     }
 
@@ -227,32 +265,97 @@ mod tests {
             Path::new("/home/u/.local/share/org.aipotluck.localclient"),
             home,
             ID,
-            &dev()
+            &dev(),
+            NONE
         ));
         assert!(safe_to_delete(
             Path::new("/home/u/.local/share/aipotluck/gui-runtime"),
             home,
             ID,
-            &dev()
+            &dev(),
+            NONE
         ));
         // the CLI's install is upstream's to delete, never ours
         assert!(!safe_to_delete(
             Path::new("/home/u/.local/share/aipotluck"),
             home,
             ID,
-            &dev()
+            &dev(),
+            NONE
         ));
         assert!(!safe_to_delete(
             Path::new("/home/u/.cache/huggingface"),
             home,
             ID,
-            &dev()
+            &dev(),
+            NONE
         ));
         assert!(!safe_to_delete(
             Path::new("/home/u/Downloads"),
             home,
             ID,
-            &dev()
+            &dev(),
+            NONE
+        ));
+    }
+
+    #[test]
+    fn the_settings_file_is_deletable_only_when_the_app_names_it_as_its_own() {
+        let home = Path::new("/home/u");
+        let settings = PathBuf::from("/home/u/.local/share/aipotluck/gui-settings.json");
+        // Sitting in upstream's install root, it is not recognisably ours by name...
+        assert!(!safe_to_delete(&settings, home, ID, &dev(), NONE));
+        // ...but the app writes that exact file, so it says so.
+        let own = [settings.clone()];
+        assert!(safe_to_delete(&settings, home, ID, &dev(), &own));
+        // Naming it never makes an unrelated path deletable, and never the home directory.
+        assert!(!safe_to_delete(
+            Path::new("/home/u/notes.txt"),
+            home,
+            ID,
+            &dev(),
+            &own
+        ));
+        assert!(!safe_to_delete(
+            home,
+            home,
+            ID,
+            &dev(),
+            &[home.to_path_buf()]
+        ));
+    }
+
+    // The GUI's own preferences file sits beside the runtime, inside upstream's install root: that
+    // exact file is the app's to delete, but nothing else in there is -- not the root itself, and
+    // not a file of the user's that happens to live beside it. (The root is pruned separately, and
+    // only when it is empty: see the_cleanup_prunes_the_install_root_only_once_the_last_of_its_files_is_gone.)
+    #[test]
+    fn the_gui_settings_file_beside_the_runtime_is_deletable_and_its_folder_is_not() {
+        let home = Path::new("/home/u");
+        let settings = PathBuf::from("/home/u/.local/share/aipotluck/gui-settings.json");
+        let own = [settings.clone()];
+        assert!(safe_to_delete(&settings, home, ID, &dev(), &own));
+        assert!(!safe_to_delete(
+            Path::new("/home/u/.local/share/aipotluck"),
+            home,
+            ID,
+            &dev(),
+            &own
+        ));
+        assert!(!safe_to_delete(
+            Path::new("/home/u/.local/share/aipotluck/someone-elses.json"),
+            home,
+            ID,
+            &dev(),
+            &own
+        ));
+        // ...and neither is anything of the kept CLI's, which lives in the same root.
+        assert!(!safe_to_delete(
+            Path::new("/home/u/.local/share/aipotluck/cli"),
+            home,
+            ID,
+            &dev(),
+            &own
         ));
     }
 
@@ -267,6 +370,7 @@ mod tests {
             home,
             ID,
             &app,
+            NONE,
         );
         assert_eq!(
             planned,
@@ -276,7 +380,7 @@ mod tests {
             ]
         );
         // a dev build deletes no binary
-        assert!(plan(vec![], home, ID, &dev()).is_empty());
+        assert!(plan(vec![], home, ID, &dev(), NONE).is_empty());
     }
 
     #[test]
@@ -320,7 +424,7 @@ mod tests {
         std::fs::create_dir_all(dir.join("org.aipotluck.localclient")).unwrap();
         let target = dir.join("org.aipotluck.localclient");
         let mut stand_in = Command::new("sleep").arg("1").spawn().unwrap();
-        let mut c = cleanup_command(stand_in.id(), &dev(), &[target.clone()])
+        let mut c = cleanup_command(stand_in.id(), &dev(), &[target.clone()], None)
             .spawn()
             .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(400));
@@ -328,6 +432,85 @@ mod tests {
         stand_in.wait().unwrap();
         c.wait().unwrap();
         assert!(!target.exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_cleanup_prunes_the_install_root_only_once_the_last_of_its_files_is_gone() {
+        let dir = std::env::temp_dir().join(format!("aip-prune-{}", std::process::id()));
+        let root = dir.join("aipotluck");
+        std::fs::create_dir_all(root.join("gui-runtime")).unwrap();
+        std::fs::write(root.join("gui-settings.json"), b"{}").unwrap();
+        let mut stand_in = Command::new("sleep").arg("1").spawn().unwrap();
+        // Reap the stand-in *before* waiting on the cleanup: a zombie still answers `kill -0`, so
+        // the cleanup would sit out its whole 120s grace period first.
+        let mut cleanup = cleanup_command(
+            stand_in.id(),
+            &dev(),
+            &[root.join("gui-runtime"), root.join("gui-settings.json")],
+            Some(&root),
+        )
+        .spawn()
+        .unwrap();
+        stand_in.wait().unwrap();
+        cleanup.wait().unwrap();
+        assert!(!root.exists(), "the empty install root was left behind");
+
+        // A directory that still holds something of the user's is never removed.
+        let root = dir.join("aipotluck");
+        std::fs::create_dir_all(root.join("gui-runtime")).unwrap();
+        std::fs::write(root.join("notes.txt"), b"mine").unwrap();
+        let mut stand_in = Command::new("sleep").arg("1").spawn().unwrap();
+        let mut cleanup = cleanup_command(
+            stand_in.id(),
+            &dev(),
+            &[root.join("gui-runtime")],
+            Some(&root),
+        )
+        .spawn()
+        .unwrap();
+        stand_in.wait().unwrap();
+        cleanup.wait().unwrap();
+        assert!(!root.join("gui-runtime").exists());
+        assert!(
+            root.join("notes.txt").exists(),
+            "deleted a directory that was not empty"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The kept CLI's own install lives in the same root the GUI prunes
+    /// (`<data_home>/aipotluck/cli/`), so the two uninstall-cleanup changes have to agree: with the
+    /// CLI kept, the root still holds `cli/`, and pruning it must never take that with it. The
+    /// uninstall only ever names the root for pruning when the CLI goes too (src-tauri/src/lib.rs);
+    /// this is the backstop that holds even if that ever stops being true.
+    #[cfg(unix)]
+    #[test]
+    fn pruning_the_install_root_never_takes_a_kept_cli_with_it() {
+        let dir = std::env::temp_dir().join(format!("aip-keep-cli-{}", std::process::id()));
+        let root = dir.join("aipotluck");
+        let cli = root.join("cli").join("src-a72f6c87350e");
+        std::fs::create_dir_all(&cli).unwrap();
+        std::fs::write(root.join("cli").join("current.json"), b"{}").unwrap();
+        std::fs::create_dir_all(root.join("gui-runtime")).unwrap();
+        let mut stand_in = Command::new("sleep").arg("1").spawn().unwrap();
+        let mut cleanup = cleanup_command(
+            stand_in.id(),
+            &dev(),
+            &[root.join("gui-runtime")],
+            // Named for pruning even though the CLI is kept: nothing under `cli/` may go.
+            Some(&root),
+        )
+        .spawn()
+        .unwrap();
+        stand_in.wait().unwrap();
+        cleanup.wait().unwrap();
+        assert!(
+            root.join("cli").join("current.json").exists() && cli.exists(),
+            "the kept CLI's install was deleted with the app's runtime"
+        );
+        assert!(root.exists(), "the install root was removed under the kept CLI");
         std::fs::remove_dir_all(&dir).ok();
     }
 }

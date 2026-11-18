@@ -38,6 +38,47 @@ pub struct Runtime {
 
 const READY_MARKER: &str = ".unpacked-ok";
 
+/// The shared CLI copy's manifest (`<data_home>/aipotluck/cli/current.json`), as upstream's
+/// `cli_home.read_installed` writes it. Only the keys this app acts on: which source tree and
+/// which interpreter the machine's one copy of the CLI runs from.
+#[derive(Debug, Clone, Deserialize)]
+pub struct InstalledCli {
+    pub schema: u32,
+    pub sha: String,
+    pub python: PathBuf,
+    pub src: PathBuf,
+}
+
+/// Which copy of upstream's code an entry point runs from.
+///
+/// `Bundled` is the tree shipped inside this app (unpacked under `gui-runtime/`), pinned to the
+/// version the sidecars and the GUI's own expectations were written against. `Installed` is the
+/// shared copy both installers stage into `<data_home>/aipotluck/cli/`: whichever of the two ran
+/// last with the newer source commit, so the GUI and `aipotluck-local-client` never disagree about
+/// what version the machine is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpstreamCopy {
+    Bundled,
+    Installed,
+}
+
+/// What `home/current.json` says is staged in `home`, or None if nothing usable is: no manifest,
+/// unreadable or dead JSON, another schema, a manifest missing a value this app relies on, or one
+/// whose interpreter or source tree has since been deleted. Never raises -- None means "use the
+/// bundled copy", which every caller treats as "run what we shipped".
+pub fn installed_cli_in(home: &Path) -> Option<InstalledCli> {
+    let raw = fs::read(home.join("current.json")).ok()?;
+    let installed: InstalledCli = serde_json::from_slice(&raw).ok()?;
+    if installed.schema != 1
+        || installed.sha.is_empty()
+        || !installed.python.is_file()
+        || !installed.src.is_dir()
+    {
+        return None;
+    }
+    Some(installed)
+}
+
 fn sha256_file(path: &Path) -> Result<String, String> {
     use sha2::{Digest, Sha256};
     let mut f = fs::File::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
@@ -154,27 +195,121 @@ pub fn ensure_unpacked(resource_dir: &Path) -> Result<Runtime, String> {
     })
 }
 
+/// The one line upstream's `installer.adopt` promises last on stdout: `ADOPT_RESULT <json>`,
+/// with `action` in skipped|adopted|current|kept-newer|error.
+pub const ADOPT_RESULT_PREFIX: &str = "ADOPT_RESULT ";
+
+/// How many stderr lines an adopt failure keeps, when there is no result line to go on.
+const ADOPT_ERROR_TAIL_LINES: usize = 20;
+
+fn adopt_error(error: String, code: Option<i32>) -> serde_json::Value {
+    serde_json::json!({ "action": "error", "error": error, "exit_code": code })
+}
+
+/// What `installer.adopt` said, as the app records and shows it.
+///
+/// Upstream prints exactly one stdout line for this (`ADOPT_RESULT <json>`, everything else goes
+/// to stderr), so the GUI reads that line rather than scraping prose. Anything that kept it from
+/// printing one -- a traceback, a missing module, a killed interpreter -- comes back in the same
+/// shape with `action: "error"` and stderr's tail as the message, so every caller has one thing to
+/// handle and a launch can never fail because of this.
+pub fn parse_adopt_result(stdout: &str, stderr: &str, code: Option<i32>) -> serde_json::Value {
+    for line in stdout.lines().rev() {
+        let Some(raw) = line.strip_prefix(ADOPT_RESULT_PREFIX) else {
+            continue;
+        };
+        return match serde_json::from_str::<serde_json::Value>(raw.trim()) {
+            Ok(serde_json::Value::Object(mut fields)) => {
+                fields.insert("exit_code".into(), serde_json::json!(code));
+                serde_json::Value::Object(fields)
+            }
+            Ok(other) => adopt_error(format!("ADOPT_RESULT is not a JSON object: {other}"), code),
+            Err(e) => adopt_error(format!("ADOPT_RESULT is not JSON ({e}): {raw}"), code),
+        };
+    }
+    let lines: Vec<&str> = stderr.lines().collect();
+    let tail = lines[lines.len().saturating_sub(ADOPT_ERROR_TAIL_LINES)..].join("\n");
+    adopt_error(
+        if tail.trim().is_empty() {
+            "no ADOPT_RESULT line".into()
+        } else {
+            tail
+        },
+        code,
+    )
+}
+
+/// A Command running `python` with `cwd` as the working directory, unbuffered, and with nothing
+/// inherited that could make it pick up a different Python's packages. Both copies are started
+/// this way, so a machine running the shared CLI copy behaves exactly like one running the bundle.
+fn base_cmd(python: &Path, cwd: &Path) -> Command {
+    let mut c = Command::new(python);
+    c.current_dir(cwd)
+        .env("PYTHONUNBUFFERED", "1")
+        .env("PYTHONNOUSERSITE", "1")
+        .env_remove("PYTHONPATH")
+        .env_remove("PYTHONHOME")
+        .stdin(Stdio::null());
+    // A GUI-subsystem app on Windows spawning a console program (python.exe) pops a console
+    // window per child unless told not to -- one flashing black window per probe, every
+    // poll. CREATE_NO_WINDOW suppresses it.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        c.creation_flags(CREATE_NO_WINDOW);
+    }
+    c
+}
+
 impl Runtime {
-    /// A Command running the bundled interpreter with upstream's checkout as cwd, unbuffered, and
-    /// with nothing inherited that could make it pick up a different Python's packages.
+    /// The bundled interpreter, run from the bundled upstream checkout.
     pub fn python_cmd(&self) -> Command {
-        let mut c = Command::new(&self.python);
-        c.current_dir(&self.upstream)
-            .env("PYTHONUNBUFFERED", "1")
-            .env("PYTHONNOUSERSITE", "1")
-            .env_remove("PYTHONPATH")
-            .env_remove("PYTHONHOME")
-            .stdin(Stdio::null());
-        // A GUI-subsystem app on Windows spawning a console program (python.exe) pops a console
-        // window per child unless told not to -- one flashing black window per probe, every
-        // poll. CREATE_NO_WINDOW suppresses it.
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            c.creation_flags(CREATE_NO_WINDOW);
+        base_cmd(&self.python, &self.upstream)
+    }
+
+    /// The command for one of upstream's entry points in the chosen copy, and the source tree it
+    /// runs from -- the two always travel together, since a module and its cwd must be one tree.
+    /// `Installed` falls back to the bundled copy when the shared one isn't there or isn't usable,
+    /// so a machine that never ran the installer still works.
+    fn cmd_for(&self, copy: UpstreamCopy) -> (Command, PathBuf) {
+        if copy == UpstreamCopy::Installed {
+            if let Some(installed) = installed_cli_in(&paths::cli_home()) {
+                return (base_cmd(&installed.python, &installed.src), installed.src);
+            }
         }
-        c
+        (self.python_cmd(), self.upstream.clone())
+    }
+
+    /// The launch-time adopt entry point, as a command: upstream's own `installer.adopt`, run from
+    /// the bundled copy with the bundled interpreter, told where that interpreter lives so the
+    /// shared CLI copy keeps a working one of its own.
+    fn adopt_cmd(&self) -> Command {
+        let bundle = self.python_dir.display();
+        let mut cmd = self.python_cmd();
+        cmd.args(["-m", "aipotluck.installer.adopt"])
+            .args(["--if-installed", "--installed-by=gui"])
+            .arg(format!("--bundled-python-dir={bundle}"));
+        cmd
+    }
+
+    /// Offer this app's bundled CLI to the machine's shared copy, once per launch: upstream stages
+    /// it only when it is newer than what is installed (never a downgrade), re-points the shim and
+    /// service at it, and restarts the service only if it was running and something changed. Before
+    /// Set up it does nothing at all.
+    ///
+    /// Never fails: a result is always a JSON object with an `action`, and a launch that can't run
+    /// this still opens the window. Its outcome is in `app_state.cli_adopt`.
+    pub fn adopt(&self) -> serde_json::Value {
+        let out = self.adopt_cmd().output();
+        match out {
+            Ok(out) => parse_adopt_result(
+                &String::from_utf8_lossy(&out.stdout),
+                &String::from_utf8_lossy(&out.stderr),
+                out.status.code(),
+            ),
+            Err(e) => adopt_error(format!("could not start adopt: {e}"), None),
+        }
     }
 
     pub fn probe(&self) -> Result<serde_json::Value, String> {
@@ -253,13 +388,15 @@ impl Runtime {
     /// stderr merged in arrival order per stream). Returns the exit code.
     pub fn run_module_streaming(
         &self,
+        copy: UpstreamCopy,
         module: &str,
         args: &[String],
         on_spawn: impl FnOnce(u32),
         on_line: impl Fn(&str) + Send + Sync + 'static,
     ) -> Result<i32, String> {
         let mut child = self
-            .python_cmd()
+            .cmd_for(copy)
+            .0
             .arg("-m")
             .arg(module)
             .args(args)
@@ -308,10 +445,9 @@ impl Runtime {
             .open(Path::new(log_dir).join("aipotluck.gui-hosted.log"))
             .map_err(|e| e.to_string())?;
         let log2 = log.try_clone().map_err(|e| e.to_string())?;
-        let mut cmd = self.python_cmd();
+        let (mut cmd, src) = self.cmd_for(UpstreamCopy::Installed);
         cmd.arg(
-            self.upstream
-                .join("aipotluck")
+            src.join("aipotluck")
                 .join("service")
                 .join("aipotluck_service.py"),
         )
@@ -401,7 +537,70 @@ pub fn write_private_credentials(raw: &str) -> Result<PathBuf, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::on_spawner_thread;
+    use super::{installed_cli_in, on_spawner_thread, parse_adopt_result, Runtime, UpstreamCopy};
+    use std::path::{Path, PathBuf};
+
+    /// A fresh directory under the system temp dir, unique per call: these tests write real
+    /// manifests and interpreters, and must never see another run's leftovers.
+    fn temp_dir(tag: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "aipotluck-runtime-{}-{tag}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::SeqCst)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// `home/current.json` exactly as upstream's `cli_home.write_installed` writes it -- including
+    /// the keys this app ignores (commit_time, installed_by, installed_at).
+    fn write_manifest(home: &Path, schema: u32, sha: &str, src: &Path, python: &Path) {
+        let manifest = serde_json::json!({
+            "schema": schema,
+            "sha": sha,
+            "commit_time": 1_700_000_000i64,
+            "src": src.to_string_lossy(),
+            "python": python.to_string_lossy(),
+            "installed_by": "gui",
+            "installed_at": "2026-01-01T00:00:00Z",
+        });
+        std::fs::write(
+            home.join("current.json"),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
+    }
+
+    const STAGED_SHA: &str = "0123456789ab0000000000000000000000000000";
+
+    /// A CLI home staging a source tree and an interpreter, with a valid manifest pointing at both.
+    fn staged_cli_home(tag: &str) -> (PathBuf, PathBuf, PathBuf) {
+        let home = temp_dir(tag);
+        let src = home.join("src-0123456789ab");
+        let python = home.join("python-cpython").join("bin").join("python3");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(python.parent().unwrap()).unwrap();
+        std::fs::write(&python, b"#!/bin/sh\n").unwrap();
+        write_manifest(&home, 1, STAGED_SHA, &src, &python);
+        (home, src, python)
+    }
+
+    /// A Runtime whose bundled python and upstream tree are names only -- cmd_for builds Commands
+    /// without running them.
+    fn a_runtime() -> Runtime {
+        Runtime {
+            python: PathBuf::from("/bundled/python3"),
+            python_dir: PathBuf::from("/bundled"),
+            upstream: PathBuf::from("/bundled/upstream"),
+            probe_script: PathBuf::from("/bundled/gui_probe.py"),
+            plan_script: PathBuf::from("/bundled/gui_plan.py"),
+            server_script: PathBuf::from("/bundled/gui_server.py"),
+            upstream_sha: "0".repeat(40),
+        }
+    }
 
     /// What the kernel ties PR_SET_PDEATHSIG to is the forking thread, so every call must land on
     /// the same long-lived thread -- whichever short-lived thread asked.
@@ -419,5 +618,193 @@ mod tests {
             "spawns landed on different threads: {ids:?}"
         );
         assert_ne!(ids[0], std::thread::current().id());
+    }
+
+    /// A staged copy counts only when its manifest parses, its schema is the one this app knows,
+    /// and both paths it names still exist. Anything less must read as "nothing installed", so the
+    /// caller runs the bundled copy rather than a half-deleted one.
+    #[test]
+    fn a_cli_home_is_usable_only_when_its_manifest_and_both_its_paths_check_out() {
+        let (home, src, python) = staged_cli_home("valid");
+        let found = installed_cli_in(&home).expect("a valid manifest is honoured");
+        assert_eq!(found.schema, 1);
+        assert_eq!(found.src, src);
+        assert_eq!(found.python, python);
+        assert_eq!(found.sha, STAGED_SHA);
+
+        let empty = temp_dir("no-manifest");
+        assert!(installed_cli_in(&empty).is_none(), "no manifest at all");
+
+        let (bad_json, _, _) = staged_cli_home("bad-json");
+        std::fs::write(bad_json.join("current.json"), b"{not json").unwrap();
+        assert!(installed_cli_in(&bad_json).is_none(), "unparsable manifest");
+
+        let (newer, src, python) = staged_cli_home("schema-2");
+        write_manifest(&newer, 2, STAGED_SHA, &src, &python);
+        assert!(
+            installed_cli_in(&newer).is_none(),
+            "a schema this app does not know"
+        );
+
+        let (no_sha, src, python) = staged_cli_home("no-sha");
+        write_manifest(&no_sha, 1, "", &src, &python);
+        assert!(
+            installed_cli_in(&no_sha).is_none(),
+            "a manifest that does not say which commit is staged"
+        );
+
+        let (no_python, _, python) = staged_cli_home("no-python");
+        std::fs::remove_file(&python).unwrap();
+        assert!(
+            installed_cli_in(&no_python).is_none(),
+            "interpreter gone since the install"
+        );
+
+        let (no_src, src, _) = staged_cli_home("no-src");
+        std::fs::remove_dir_all(&src).unwrap();
+        assert!(
+            installed_cli_in(&no_src).is_none(),
+            "source tree gone since the install"
+        );
+    }
+
+    /// Everything that acts on the machine runs the shared copy when there is a usable one, and
+    /// the bundled copy otherwise -- including on a machine the installer has never run on.
+    ///
+    /// `AIPOTLUCK_CLI_HOME` is process-global, so every env-dependent assertion lives here.
+    #[test]
+    fn the_shared_copy_is_used_when_it_is_usable_and_the_bundled_one_otherwise() {
+        let rt = a_runtime();
+        std::env::set_var("AIPOTLUCK_CLI_HOME", temp_dir("empty-cli-home"));
+        let (cmd, src) = rt.cmd_for(UpstreamCopy::Installed);
+        assert_eq!(
+            cmd.get_program(),
+            rt.python.as_os_str(),
+            "no staged copy: the bundled interpreter"
+        );
+        assert_eq!(
+            cmd.get_current_dir(),
+            Some(rt.upstream.as_path()),
+            "no staged copy: the bundled tree"
+        );
+        assert_eq!(src, rt.upstream);
+
+        let (home, staged_src, staged_python) = staged_cli_home("usable-cli-home");
+        std::env::set_var("AIPOTLUCK_CLI_HOME", &home);
+        let (cmd, src) = rt.cmd_for(UpstreamCopy::Installed);
+        assert_eq!(cmd.get_program(), staged_python.as_os_str());
+        assert_eq!(cmd.get_current_dir(), Some(staged_src.as_path()));
+        assert_eq!(src, staged_src);
+
+        // Set up's installer and the sidecars never follow the shared copy: they are pinned to the
+        // tree this app shipped.
+        let (cmd, src) = rt.cmd_for(UpstreamCopy::Bundled);
+        assert_eq!(cmd.get_program(), rt.python.as_os_str());
+        assert_eq!(src, rt.upstream);
+
+        std::env::remove_var("AIPOTLUCK_CLI_HOME");
+    }
+
+    /// Upstream's log noise goes to stderr, so the result line is the only thing on stdout that
+    /// matters -- and if more than one ever appears, the last is the one that describes how the
+    /// run ended. The exit code rides along so a reviewer can tell "adopted, exit 0" from
+    /// "adopted, exit 1".
+    #[test]
+    fn the_last_adopt_result_line_wins_over_everything_around_it() {
+        let stdout = concat!(
+            "ADOPT_RESULT {\"action\": \"current\", \"sha\": \"old\"}\n",
+            "some stray line upstream should never print\n",
+            "ADOPT_RESULT {\"action\": \"adopted\", \"sha\": \"abc\", \"installed_sha\": \"abc\", ",
+            "\"repointed\": true, \"service_restarted\": false}\n",
+        );
+        let value = parse_adopt_result(stdout, "[INFO] noise\n", Some(0));
+        assert_eq!(value["action"], "adopted");
+        assert_eq!(value["sha"], "abc");
+        assert_eq!(value["repointed"], true);
+        assert_eq!(value["exit_code"], 0);
+    }
+
+    /// A result line that isn't a JSON object is a bug in the thing that printed it, but it must
+    /// read as an error result, not a panic or a "ready" runtime with no adopt record.
+    #[test]
+    fn an_adopt_result_line_that_is_not_json_is_reported_as_an_error() {
+        let bad = parse_adopt_result("ADOPT_RESULT {not json\n", "", Some(1));
+        assert_eq!(bad["action"], "error");
+        assert_eq!(bad["exit_code"], 1);
+        assert!(
+            bad["error"].as_str().unwrap().contains("not json"),
+            "the message names what was printed: {bad}"
+        );
+
+        let not_object = parse_adopt_result("ADOPT_RESULT \"skipped\"\n", "", Some(0));
+        assert_eq!(not_object["action"], "error");
+        assert_eq!(not_object["exit_code"], 0);
+    }
+
+    /// The case that actually happens on a broken machine: no result line at all. The error must
+    /// carry stderr's tail, and only its tail -- a traceback can be hundreds of lines, and this
+    /// value is logged and handed to the UI.
+    #[test]
+    fn no_adopt_result_line_reports_stderrs_tail_as_the_error() {
+        let stderr: String = (1..=25).map(|n| format!("line {n}\n")).collect();
+        let value = parse_adopt_result("[INFO] nothing to do\n", &stderr, Some(1));
+        assert_eq!(value["action"], "error");
+        assert_eq!(value["exit_code"], 1);
+        let error = value["error"].as_str().unwrap();
+        assert!(
+            error.starts_with("line 6\n") && error.ends_with("line 25"),
+            "only the last 20 stderr lines survive: {error}"
+        );
+        assert_eq!(error.lines().count(), 20);
+
+        let silent = parse_adopt_result("", "   \n\n", Some(0));
+        assert_eq!(silent["action"], "error");
+        assert_eq!(silent["error"], "no ADOPT_RESULT line");
+        assert_eq!(silent["exit_code"], 0);
+    }
+
+    /// The launch-time command is upstream's own adopt entry point, run from the bundled tree with
+    /// the bundled interpreter, with the two flags the design fixes: `--if-installed` (nothing at
+    /// all before Set up) and the interpreter's own directory for the shared copy to keep.
+    #[test]
+    fn adopt_runs_upstreams_adopt_entry_point_from_the_bundled_copy() {
+        let rt = a_runtime();
+        let cmd = rt.adopt_cmd();
+        assert_eq!(cmd.get_program(), rt.python.as_os_str());
+        assert_eq!(cmd.get_current_dir(), Some(rt.upstream.as_path()));
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args,
+            [
+                "-m",
+                "aipotluck.installer.adopt",
+                "--if-installed",
+                "--installed-by=gui",
+                "--bundled-python-dir=/bundled",
+            ]
+        );
+    }
+
+    /// A launch on a machine where the bundled interpreter is missing must still open the window:
+    /// adopt reports the failure as a result instead of returning one to propagate.
+    #[test]
+    fn adopt_that_cannot_start_reports_an_error_instead_of_failing_the_launch() {
+        let dir = temp_dir("adopt-no-python");
+        let rt = Runtime {
+            python: dir.join("does-not-exist").join("python3"),
+            ..a_runtime()
+        };
+        let value = rt.adopt();
+        assert_eq!(value["action"], "error");
+        assert!(
+            value["error"]
+                .as_str()
+                .unwrap()
+                .contains("could not start adopt"),
+            "{value}"
+        );
     }
 }

@@ -34,13 +34,24 @@ SERVICE_NAME = "aipotluck"
 
 
 def service_manager_usable(os_name: str) -> tuple[bool, str]:
+    # Test-only, like the GUI's port variables: tools/e2e-smoke.py drives the window-hosted service
+    # (what a container or a WSL box without systemd gets), and on a machine that does have a
+    # systemd user session the answer below is otherwise not the test's to choose.
+    if os.environ.get("AIPOTLUCK_GUI_TEST_NO_SERVICE_MANAGER"):
+        return False, "test-only: AIPOTLUCK_GUI_TEST_NO_SERVICE_MANAGER is set"
     if os_name != "linux":
         return True, "assumed (launchd / Task Scheduler are always present)"
     if shutil.which("systemctl") is None:
         return False, "systemctl not found"
     try:
         result = subprocess.run(
-            ["systemctl", "--user", "show-environment"], capture_output=True, text=True, timeout=5
+            # Not 5s: this answer decides whether the service is registered with systemd or hosted
+            # by the window, and on a loaded machine (the arm64 smoke host) a 5s timeout expired
+            # with systemd answering 12ms later -- the machine was told it had no user session.
+            ["systemctl", "--user", "show-environment"],
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return False, f"systemctl --user failed: {exc}"
